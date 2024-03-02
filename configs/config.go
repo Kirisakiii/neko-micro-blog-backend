@@ -1,4 +1,10 @@
-package config
+/*
+Package configs - NekoBlog backend server configuration setup.
+This file is for configuration setup.
+Copyright (c) [2024], Author(s):
+- WhitePaper233<baizhiwp@gmail.com>
+*/
+package configs
 
 import (
 	"os"
@@ -7,6 +13,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// Config 配置文件对象
 type Config struct {
 	// 服务器设置
 	Server struct {
@@ -31,8 +38,8 @@ type Config struct {
 	// 压缩设置
 	Compress struct {
 		// 压缩等级
-		Level compress.Level `toml:"compress"`
-	}
+		Level compress.Level `toml:"level"`
+	} `toml:"compress"`
 
 	// 环境设置
 	Env struct {
