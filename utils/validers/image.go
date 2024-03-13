@@ -1,6 +1,6 @@
 /*
 Package validers - NekoBlog backend server data validation.
-This file is for avatar file validation.
+This file is for postimage file validation.
 Copyright (c) [2024], Author(s):
 - WhitePaper233<baizhiwp@gmail.com>
 */
@@ -15,24 +15,27 @@ import (
 
 	"golang.org/x/image/webp"
 
-	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 )
 
-// ValidAvatarFile 验证头像文件
+// ValidImageFile 校验图片文件
 //
 // 参数
 //   - fileHeader：文件头
+//   - file：文件指针
+//   - minWidth：最小宽度
+//   - minHeight：最小高度
+//   - maxSize：最大文件体积
 //
 // 返回值
-//   - types.AvatarFileType：头像文件类型
+//   - types.PostImageFileType：头像文件类型
 //   - error：如果文件不合法，则返回相应的错误信息，否则返回nil
-func ValidAvatarFile(fileHeader *multipart.FileHeader, file *multipart.File) (types.AvatarFileType, error) {
-	fileType := types.AVATAR_FILE_TYPE_UNKNOWN
+func ValidImageFile(fileHeader *multipart.FileHeader, file *multipart.File, minWidth, minHeight int, maxSize int64) (types.ImageFileType, error) {
+	fileType := types.IMAGE_FILE_TYPE_UNKNOWN
 
 	// 检验文件大小
-	if fileHeader.Size > consts.MAX_AVATAR_FILE_SIZE {
-		return fileType, errors.New("avatar size too large")
+	if fileHeader.Size > maxSize {
+		return fileType, errors.New("image file size too large")
 	}
 
 	var (
@@ -43,24 +46,24 @@ func ValidAvatarFile(fileHeader *multipart.FileHeader, file *multipart.File) (ty
 	// 校验文件类型并解码图片
 	switch fileHeader.Header.Get("Content-Type") {
 	case "image/jpeg":
-		fileType = types.AVATAR_FILE_TYPE_JPEG
+		fileType = types.IMAGE_FILE_TYPE_JPEG
 		imgConfig, err = jpeg.DecodeConfig(*file)
 	case "image/png":
-		fileType = types.AVATAR_FILE_TYPE_PNG
+		fileType = types.IMAGE_FILE_TYPE_PNG
 		imgConfig, err = png.DecodeConfig(*file)
 	case "image/webp":
-		fileType = types.AVATAR_FILE_TYPE_WEBP
+		fileType = types.IMAGE_FILE_TYPE_WEBP
 		imgConfig, err = webp.DecodeConfig(*file)
 	default:
-		return fileType, errors.New("avatar file type not supported")
+		return fileType, errors.New("image file type not supported")
 	}
 	if err != nil {
 		return fileType, err
 	}
 
 	// 校验图片尺寸
-	if imgConfig.Width < consts.MIN_AVATAR_SIZE {
-		return fileType, errors.New("avatar size too small")
+	if imgConfig.Width < minWidth || imgConfig.Height < minHeight {
+		return fileType, errors.New("image size too small")
 	}
 
 	// 重置文件指针
