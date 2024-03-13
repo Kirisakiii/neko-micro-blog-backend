@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	fiberLogger "github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,6 +19,7 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/loggers"
 	"github.com/Kirisakiii/neko-micro-blog-backend/middlewares"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
+	"github.com/Kirisakiii/neko-micro-blog-backend/rontines"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 )
@@ -105,6 +107,18 @@ func init() {
 }
 
 func main() {
+	// 创建定时任务
+	crontab := cron.New()
+	crontab.AddJob(
+		"@every 5min",
+		cron.NewChain(
+			cron.SkipIfStillRunning(cron.DefaultLogger),
+		).Then(
+			rontines.NewAvatarCleanerJob(logger, db),
+		),
+	)
+	crontab.Start()
+
 	// 创建 fiber 实例
 	var fiberConfig fiber.Config
 	// 如果是生产环境，则开启 Prefork

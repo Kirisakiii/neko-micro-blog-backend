@@ -278,9 +278,9 @@ func (controller *UserController) NewUpdateProfileHandler() fiber.Handler {
 		}
 
 		// 校验参数
-		if reqBody.NickName == nil && reqBody.Birth == nil && reqBody.Gender == nil {
+		if reqBody.NickName == nil {
 			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, "at least one of nickname, birth or gender is required"),
+				serializers.NewResponse(consts.PARAMETER_ERROR, "nickname is required"),
 			)
 		}
 
