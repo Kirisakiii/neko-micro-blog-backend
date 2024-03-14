@@ -18,15 +18,16 @@ func NewPostListResponse(postInfos []models.PostInfo) *PostListResponse {
 
 // PostDetailResponse 文章信息响应结构
 type PostDetailResponse struct {
-	CommentID    uint64   `json:"comment_id"`   //
-	UID          uint64   `json:"uid"`          // 用户ID
-	Title        string   `json:"title"`        // 标题
-	Content      string   `json:"content"`      // 内容
-	ParentPostID *uint64  `json:"ParentPostID"` // 转发自文章ID
-	Images       []string `json:"images"`       // 图片
-	Like         int      `json:"like"`         // 点赞数
-	Favorite     int      `json:"favorite"`     // 收藏数
-	Farward      int      `json:"farward"`      // 转发数
+	CommentID    uint64   `json:"comment_id"`     //
+	UID          uint64   `json:"uid"`            // 用户ID
+	Timestamp    int64    `json:"timestamp"`      // 时间戳
+	Title        string   `json:"title"`          // 标题
+	Content      string   `json:"content"`        // 内容
+	ParentPostID *uint64  `json:"parent_post_id"` // 转发自文章ID
+	Images       []string `json:"images"`         // 图片
+	Like         int      `json:"like"`           // 点赞数
+	Favorite     int      `json:"favorite"`       // 收藏数
+	Farward      int      `json:"farward"`        // 转发数
 }
 
 // NewPostDetailResponse 创建新的文章信息响应
@@ -41,13 +42,16 @@ func NewPostDetailResponse(post models.PostInfo) *PostDetailResponse {
 	profileData := &PostDetailResponse{
 		CommentID:    uint64(post.ID),
 		UID:          post.UID,
+		Timestamp:    post.CreatedAt.Unix(),
 		Title:        post.Title,
 		Content:      post.Content,
 		ParentPostID: post.ParentPostID,
-		Images:       post.Images,
 		Like:         len(post.Like),
 		Favorite:     len(post.Farward),
 		Farward:      len(post.Farward),
+	}
+	for _, image := range post.Images {
+		profileData.Images = append(profileData.Images, "/resources/image/"+image)
 	}
 
 	return profileData
@@ -64,4 +68,12 @@ func NewCreatePostResponse(postInfo models.PostInfo) CreatePostResponse {
 		ID: uint64(postInfo.ID),
 	}
 	return resp
+}
+
+type UploadPostImageResponse struct {
+	UUID string `json:"uuid"`
+}
+
+func NewUploadPostImageResponse(uuid string) UploadPostImageResponse {
+	return UploadPostImageResponse{UUID: uuid}
 }

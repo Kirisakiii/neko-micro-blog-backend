@@ -10,6 +10,7 @@ Copyright (c) [2024], Author(s):
 package services
 
 import (
+	"errors"
 	"mime/multipart"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
@@ -72,49 +73,54 @@ func (service *PostService) GetPostInfo(postID uint64) (models.PostInfo, error) 
 //
 // 返回值：
 //   - error：如果在创建过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo types.PostCreateBody, postImages []*multipart.FileHeader) (models.PostInfo, error) {
-	var (
-		converteredImages [][]byte
-		imageFile         multipart.File
-		err               error
-	)
-	// 校验并处理图片
-	for _, image := range postImages {
-		imageFile, err = image.Open()
-		if err != nil {
-			imageFile.Close()
-			return models.PostInfo{}, err
-		}
-
-		// 验证图像文件的有效性，包括尺寸和文件类型等
-		fileType, err := validers.ValidImageFile(
-			image,
-			&imageFile,
-			consts.POST_IMAGE_MIN_WIDTH,
-			consts.POST_IMAGE_MIN_HEIGHT,
-			consts.MAX_AVATAR_FILE_SIZE,
-		)
-		if err != nil {
-			imageFile.Close()
-			return models.PostInfo{}, err
-		}
-
-		//调整帖子图片的大小
-		converteredImage, err := converters.ResizePostImage(fileType, &imageFile)
-		if err != nil {
-			imageFile.Close()
-			return models.PostInfo{}, err
-		}
-		converteredImages = append(converteredImages, converteredImage)
-		imageFile.Close()
+func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo types.PostCreateBody) (models.PostInfo, error) {
+	// 校验图片是否存在
+	for _, image := range postReqInfo.Images {
+	    existence, err := service.postStore.CheckCacheImageExistence(image)
+	    if err != nil {
+	        return models.PostInfo{}, err
+	    }
+	    if !existence {
+	        return models.PostInfo{}, errors.New("image does not exist")
+	    }
 	}
 
 	// 调用存储层的方法创建帖子
-	postInfo, err := service.postStore.CreatePost(uid, ipAddr, postReqInfo, converteredImages)
+	postInfo, err := service.postStore.CreatePost(uid, ipAddr, postReqInfo)
 	if err != nil {
 		return models.PostInfo{}, err
 	}
 	return postInfo, nil
+}
+
+func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (string, error) {
+	// 打开图像文件
+	imageFile, err := postImage.Open()
+	if err != nil {
+		return "", err
+	}
+	defer imageFile.Close()
+
+	// 验证图像文件的有效性，包括尺寸和文件类型等
+	fileType, err := validers.ValidImageFile(
+		postImage,
+		&imageFile,
+		consts.POST_IMAGE_MIN_WIDTH,
+		consts.POST_IMAGE_MIN_HEIGHT,
+		consts.POST_IMAGE_MAX_FILE_SIZE,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	// 调整图片大小
+	convertedImage, err := converters.ResizePostImage(fileType, &imageFile)
+	if err != nil {
+		return "", err
+	}
+
+	// 保存在暂存区并返回UUID
+	return service.postStore.CachePostIamge(convertedImage)
 }
 
 // DeletePost 是用于删除博文的服务方法

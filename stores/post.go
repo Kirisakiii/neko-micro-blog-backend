@@ -15,7 +15,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/google/uuid"
@@ -95,30 +97,38 @@ func (store *PostStore) GetPostInfo(postID uint64) (models.PostInfo, error) {
 //
 // 返回值：
 //   - error：如果在创建过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.PostCreateBody, images [][]byte) (models.PostInfo, error) {
+func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.PostCreateBody) (models.PostInfo, error) {
 	var imageFileNames []string
-	// 将图片写入文件系统
-	for _, image := range images {
-		for {
-			imageFileName := strings.ReplaceAll(uuid.New().String(), "-", "") + ".webp"
-			savePath := filepath.Join("./public/images", imageFileName)
-			_, err := os.Stat(savePath)
-			if os.IsExist(err) {
-				continue
-			}
-			imageFileNames = append(imageFileNames, imageFileName)
+	// 将文件复制出缓存
+	for _, image := range postReqData.Images {
+		srcImage, err := os.Open(filepath.Join(consts.POST_IMAGE_CACHE_PATH, image+".webp"))
+		if err != nil {
+			return models.PostInfo{}, err
+		}
+		defer srcImage.Close()
+		dstImage, err := os.Create(filepath.Join(consts.POST_IMAGE_PATH, image+".webp"))
+		if err != nil {
+			return models.PostInfo{}, err
+		}
+		defer dstImage.Close()
+		_, err = io.Copy(dstImage, srcImage)
+		if err != nil {
+			return models.PostInfo{}, err
+		}
+		imageFileNames = append(imageFileNames, image+".webp")
 
-			file, err := os.Create(savePath)
-			if err != nil {
-				return models.PostInfo{}, err
-			}
-			defer file.Close()
+		// 删除缓存中的文件
+		result := store.db.Create(&models.DeletedCachedImage{
+			FileName: image + ".webp",
+		})
+		if result.Error != nil {
+		    return models.PostInfo{}, result.Error
+		}
 
-			_, err = io.Copy(file, bytes.NewReader(image))
-			if err != nil {
-				return models.PostInfo{}, err
-			}
-			break
+		// 删除数据库记录
+		result = store.db.Where("file_name = ?", image+".webp").Unscoped().Delete(&models.CachedPostImage{})
+		if result.Error != nil {
+		    return models.PostInfo{}, result.Error
 		}
 	}
 
@@ -134,6 +144,69 @@ func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.
 	}
 	result := store.db.Create(&postInfo)
 	return postInfo, result.Error
+}
+
+func (store *PostStore) CachePostIamge(image []byte) (string, error) {
+	// 生成文件名
+	var (
+		fileNameBuilder strings.Builder
+		UUID            string
+		savePath        string
+	)
+	for {
+		UUID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		fileNameBuilder.WriteString(UUID)
+		fileNameBuilder.WriteString(".webp")
+		savePath = filepath.Join(consts.POST_IMAGE_CACHE_PATH, fileNameBuilder.String())
+		_, err := os.Stat(savePath)
+		if os.IsExist(err) {
+			fileNameBuilder.Reset()
+			continue
+		}
+		break
+	}
+
+	// 保存图片
+	file, err := os.Create(savePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	_, err = io.Copy(file, bytes.NewReader(image))
+	if err != nil {
+		return "", err
+	}
+
+	// 写入缓存列表
+	cachedPostImage := models.CachedPostImage{
+		FileName:   fileNameBuilder.String(),
+		ExpireTime: time.Now().Add(consts.CACHE_IMAGE_EXPIRE_TIME).Unix(),
+	}
+	result := store.db.Create(&cachedPostImage)
+	return UUID, result.Error
+}
+
+func (store *PostStore) CheckCacheImageExistence(uuid string) (bool, error) {
+	// 检查缓存图片是否存在
+	var cachedPostImage models.CachedPostImage
+	result := store.db.Where("file_name = ?", uuid+".webp").First(&cachedPostImage)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	_, err := os.Stat(filepath.Join(consts.POST_IMAGE_CACHE_PATH, cachedPostImage.FileName))
+	if os.IsNotExist(err) {
+		store.db.Unscoped().Delete(&cachedPostImage)
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // DeletePost 通过博文ID删除博文的存储方法

@@ -46,8 +46,9 @@ type UserPostInfo struct {
 
 // PostCreateBody 创建博文请求体
 type PostCreateBody struct {
-	Title   string `json:"title" form:"title"`     //标题
-	Content string `json:"content" form:"content"` //内容
+	Title   string   `json:"title" form:"title"`     //标题
+	Content string   `json:"content" form:"content"` //内容
+	Images  []string `json:"images" form:"images"`   // 上传图片的UUID
 }
 
 // UserPostInfo 创建博文请求体

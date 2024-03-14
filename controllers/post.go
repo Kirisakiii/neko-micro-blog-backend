@@ -10,7 +10,6 @@ package controllers
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -50,7 +49,7 @@ func (controller *PostController) NewPostListHandler() fiber.Handler {
 			)
 		}
 		return c.Status(200).JSON(
-			serializers.NewPostListResponse(posts),
+			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostListResponse(posts)),
 		)
 	}
 }
@@ -62,7 +61,7 @@ func (controller *PostController) NewPostListHandler() fiber.Handler {
 func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 根据 UID 获取用户信息
-		postIDString := ctx.Query("post-id")
+		postIDString := ctx.Params("post")
 		if postIDString == "" {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, "post id is required"),
@@ -124,25 +123,14 @@ func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 				serializers.NewResponse(consts.PARAMETER_ERROR, "post title or post content"),
 			)
 		}
-
-		// 处理图片上传
-		form, err := ctx.MultipartForm()
-		if err != nil {
+		if len(reqBody.Images) > 9 {
 			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
-			)
-		}
-		files := form.File["images"]
-
-		// 检查表单中文件的数量
-		if len(files) > 9 {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, "The number of images cannot exceed 9"),
+				serializers.NewResponse(consts.PARAMETER_ERROR, "post images count exceeds the limit"),
 			)
 		}
 
 		// 创建博文
-		postInfo, err := controller.postService.CreatePost(claims.UID, ctx.IP(), reqBody, files)
+		postInfo, err := controller.postService.CreatePost(claims.UID, ctx.IP(), reqBody)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -160,6 +148,35 @@ func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 	}
 }
 
+func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 接收文件
+		form, err := ctx.MultipartForm()
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+
+		// 校验文件数量
+		files := form.File["image"]
+		if len(files) > 1 {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "the number of image cannot exceed 1"),
+			)
+		}
+
+		UUID, err := controller.postService.UploadPostImage(files[0])
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		return ctx.Status(200).JSON(serializers.NewUploadPostImageResponse(UUID))
+	}
+}
+
 // NewDeletePostHandler 返回一个用于处理删除博文请求的 Fiber 处理函数
 //
 // 参数：
@@ -171,7 +188,6 @@ func (controller *PostController) NewDeletePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 获取PostID
 		postID := ctx.Params("post")
-		fmt.Println(postID)
 
 		//验证postID是否为空
 		if postID == "" {

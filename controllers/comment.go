@@ -9,7 +9,6 @@ package controllers
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
@@ -53,7 +52,7 @@ func (controller *CommentController) NewCreateCommentHandler(postStore *stores.P
 			)
 		}
 
-		fmt.Println(reqBody)
+
 		// 校验参数
 		if reqBody.Content == "" || reqBody.PostID == nil {
 			return ctx.Status(200).JSON(
