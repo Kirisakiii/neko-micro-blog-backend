@@ -7,3 +7,7 @@ Copyright (c) [2024], Author(s):
 */
 package consts
 
+const (
+	// 缓存图片过期时间
+	CACHE_IMAGE_EXPIRE_TIME = 3600 * 24 * 1 // 1 day
+)

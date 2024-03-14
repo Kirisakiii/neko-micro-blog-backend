@@ -18,7 +18,10 @@ import "gorm.io/gorm"
 func Migrate(db *gorm.DB) error {
 	var err error
 	// cron 相关
-	if err = db.AutoMigrate(&AvatarDeletionWaitList{}); err != nil {
+	if err = db.AutoMigrate(&DeletedAvatar{}); err != nil {
+		return err
+	}
+	if err = db.AutoMigrate(&DeletedCachedImage{}); err != nil {
 		return err
 	}
 
@@ -35,9 +38,21 @@ func Migrate(db *gorm.DB) error {
 	if err = db.AutoMigrate(&UserAvaliableToken{}); err != nil {
 		return err
 	}
+	if err = db.AutoMigrate(&UserLikedRecord{}); err != nil {
+		return err
+	}
+	if err = db.AutoMigrate(&UserDislikeRecord{}); err != nil {
+		return err
+	}
+	if err = db.AutoMigrate(&UserFavouriteRecord{}); err != nil {
+		return err
+	}
 
 	// Post 相关
 	if err = db.AutoMigrate(&PostInfo{}); err != nil {
+		return err
+	}
+	if err = db.AutoMigrate(&CachedPostImage{}); err != nil {
 		return err
 	}
 

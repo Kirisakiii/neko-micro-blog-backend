@@ -17,6 +17,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 )
@@ -61,6 +62,24 @@ func (store *UserStore) RegisterUserByUsername(username string, salt string, has
 		PasswordHash: hashedPassword,
 	}
 	result = store.db.Create(&userAuthInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+	result = store.db.Create(&models.UserLikedRecord{
+		UID: uint64(uid),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	result = store.db.Create(&models.UserDislikeRecord{
+		UID: uint64(uid),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	result = store.db.Create(&models.UserFavouriteRecord{
+		UID: uint64(uid),
+	})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -227,7 +246,7 @@ func (store *UserStore) GetUserAvaliableTokensByUsername(username string) ([]mod
 // 返回值：
 //   - error：如果在保存过程中发生错误，则返回相应的错误信息，否则返回nil。
 func (store *UserStore) SaveUserAvatarByUID(uid uint64, fileName string, data []byte) error {
-	savePath := filepath.Join("./public/avatars", fileName)
+	savePath := filepath.Join(consts.AVATAR_IMAGE_PATH, fileName)
 
 	// 创建目标文件
 	file, err := os.Create(savePath)
@@ -251,7 +270,7 @@ func (store *UserStore) SaveUserAvatarByUID(uid uint64, fileName string, data []
 
 	// 将旧头像文件加入清理队列
 	if user.Avatar != "vanilla.webp" {
-		store.db.Create(&models.AvatarDeletionWaitList{
+		store.db.Create(&models.DeletedAvatar{
 			FileName: user.Avatar,
 		})
 	}
