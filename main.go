@@ -8,7 +8,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	fiberLogger "github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -108,31 +107,8 @@ func init() {
 }
 
 func main() {
-	// 创建定时任务
-	crontab := cron.New()
-	_, err := crontab.AddJob(
-		"@every 5m",
-		cron.NewChain(
-			cron.SkipIfStillRunning(cron.DefaultLogger),
-		).Then(
-			rontines.NewAvatarCleanerJob(logger, db),
-		),
-	)
-	if err != nil {
-		logger.Panicln(err.Error())
-	}
-	_, err = crontab.AddJob(
-		"@every 5m",
-		cron.NewChain(
-			cron.SkipIfStillRunning(cron.DefaultLogger),
-		).Then(
-			rontines.NewCachedImageCleanerJob(logger, db),
-		),
-	)
-	if err != nil {
-		logger.Panicln(err.Error())
-	}
-	crontab.Start()
+	// 初始化定时任务
+	rontines.InitJobs(logger, db)
 
 	// 创建 fiber 实例
 	var fiberConfig fiber.Config
@@ -183,11 +159,16 @@ func main() {
 	// Post 路由
 	postController := controllerFactory.NewPostController()
 	post := api.Group("/post")
-	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())             // 创建文章
-	post.Post("/upload-img", authMiddleware.NewMiddleware(), postController.NewUploadPostImageHandler()) // 上传博文图片
-	post.Get("/list", postController.NewPostListHandler())                                               // 获取文章列表
-	post.Get("/:post", postController.NewPostDetailHandler())                                            // 获取文章信息
-	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())         // 删除文章
+	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                              // 获取文章列表
+	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())            // 获取用户文章状态
+	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                       // 创建文章
+	post.Post("/upload-img", authMiddleware.NewMiddleware(), postController.NewUploadPostImageHandler())           // 上传博文图片
+	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler())                        // 点赞文章
+	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler())           // 取消点赞文章
+	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler())              // 收藏文章
+	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler()) // 取消收藏文章
+	post.Get("/:post", postController.NewPostDetailHandler())                                                      // 获取文章信息
+	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())                   // 删除文章
 
 	// Comment 路由
 	commentController := controllerFactory.NewCommentController()

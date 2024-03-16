@@ -19,6 +19,7 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/converters"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/validers"
+	"github.com/lib/pq"
 )
 
 // PostService 博文服务
@@ -40,12 +41,42 @@ func (factory *Factory) NewPostService() *PostService {
 // 返回值：
 // - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
 // - error: 在获取帖子信息过程中遇到的任何错误，如果有的话。
-func (service *PostService) GetPostList() ([]models.PostInfo, error) {
-	userPosts, err := service.postStore.GetPostList()
+func (service *PostService) GetPostList(reqType, uid string, userStore *stores.UserStore) ([]uint64, error) {
+	var (
+		postInfos  []models.PostInfo
+		userRecord pq.Int64Array
+		err        error
+	)
+	switch reqType {
+	case "all":
+		postInfos, err = service.postStore.GetPostList()
+	case "user":
+		postInfos, err = service.postStore.GetPostListByUID(uid)
+	case "liked":
+		userRecord, err = userStore.GetUserLikedRecord(uid)
+	case "favourited":
+		userRecord, err = userStore.GetUserFavoriteRecord(uid)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return userPosts, nil
+
+	if reqType == "all" || reqType == "user" {
+		postIDs := make([]uint64, len(postInfos))
+		for index, post := range postInfos {
+			postIDs[index] = uint64(post.ID)
+		}
+		return postIDs, nil
+	}
+
+	if userRecord == nil {
+		return nil, nil
+	}
+	postIDs := make([]uint64, len(userRecord))
+	for index, id := range userRecord {
+		postIDs[index] = uint64(id)
+	}
+	return postIDs, nil
 }
 
 // GetPostInfoByUsername 根据用户名获取用户信息。
@@ -76,13 +107,13 @@ func (service *PostService) GetPostInfo(postID uint64) (models.PostInfo, error) 
 func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo types.PostCreateBody) (models.PostInfo, error) {
 	// 校验图片是否存在
 	for _, image := range postReqInfo.Images {
-	    existence, err := service.postStore.CheckCacheImageExistence(image)
-	    if err != nil {
-	        return models.PostInfo{}, err
-	    }
-	    if !existence {
-	        return models.PostInfo{}, errors.New("image does not exist")
-	    }
+		existence, err := service.postStore.CheckCacheImageExistence(image)
+		if err != nil {
+			return models.PostInfo{}, err
+		}
+		if !existence {
+			return models.PostInfo{}, errors.New("image does not exist")
+		}
 	}
 
 	// 调用存储层的方法创建帖子
@@ -93,6 +124,14 @@ func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo ty
 	return postInfo, nil
 }
 
+// UploadPostImage 上传博文图片
+//
+// 参数：
+//   - postImage：待上传的博文图片
+//
+// 返回值：
+//   - string：图片UUID
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (string, error) {
 	// 打开图像文件
 	imageFile, err := postImage.Open()
@@ -123,13 +162,79 @@ func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (st
 	return service.postStore.CachePostIamge(convertedImage)
 }
 
-// DeletePost 是用于删除博文的服务方法
+// LikePost 点赞博文
 //
 // 参数：
-// - postID uint64：待删除博文的ID
+//   - postID：待点赞博文的ID
 //
 // 返回值：
-// - error：如果发生错误，返回相应错误信息；否则返回 nil
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) LikePost(uid, postID int64) error {
+	// 调用post存储中的点赞方法
+	return service.postStore.LikePost(uid, postID)
+}
+
+// CancelLikePost 取消点赞博文
+//
+// 参数：
+//   - uid：用户ID
+//   - postID：待取消点赞博文的ID
+//
+// 返回值：
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) CancelLikePost(uid, postID int64) error {
+	// 调用post存储中的取消点赞方法
+	return service.postStore.CancelLikePost(uid, postID)
+}
+
+// FavouritePost 收藏博文
+//
+// 参数：
+//   - uid：用户ID
+//   - postID：待收藏博文的ID
+//
+// 返回值：
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) FavouritePost(uid, postID int64) error {
+	// 调用post存储中的收藏方法
+	return service.postStore.FavouritePost(uid, postID)
+}
+
+// CancelFavouritePost 取消收藏博文
+//
+// 参数：
+//   - uid：用户ID
+//   - postID：待取消收藏博文的ID
+//
+// 返回值：
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) CancelFavouritePost(uid, postID int64) error {
+	// 调用post存储中的取消收藏方法
+	return service.postStore.CancelFavouritePost(uid, postID)
+}
+
+// GetPostUserStatus 获取用户对帖子的状态
+//
+// 参数：
+//   - uid：用户ID
+//   - postID：帖子ID
+//
+// 返回值：
+//   - bool：用户是否点赞
+//   - bool：用户是否收藏
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) GetPostUserStatus(uid, postID int64) (bool, bool, error) {
+	// 调用post存储中的获取用户帖子状态方法
+	return service.postStore.GetPostUserStatus(uid, postID)
+}
+
+// DeletePost 删除博文
+//
+// 参数：
+//   - postID uint64：待删除博文的ID
+//
+// 返回值：
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (service *PostService) DeletePost(postID uint64) error {
 	// 调用post存储中的删除post方法
 	return service.postStore.DeletePost(postID)
