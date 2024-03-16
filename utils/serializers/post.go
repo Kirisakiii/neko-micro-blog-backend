@@ -8,12 +8,8 @@ type PostListResponse struct {
 	IDs []uint64 `json:"ids"`
 }
 
-func NewPostListResponse(postInfos []models.PostInfo) *PostListResponse {
-	ids := make([]uint64, 0)
-	for _, postInfo := range postInfos {
-		ids = append(ids, uint64(postInfo.ID))
-	}
-	return &PostListResponse{IDs: ids}
+func NewPostListResponse(posts []uint64) *PostListResponse {
+	return &PostListResponse{IDs: posts}
 }
 
 // PostDetailResponse 文章信息响应结构
@@ -26,7 +22,7 @@ type PostDetailResponse struct {
 	ParentPostID *uint64  `json:"parent_post_id"` // 转发自文章ID
 	Images       []string `json:"images"`         // 图片
 	Like         int      `json:"like"`           // 点赞数
-	Favorite     int      `json:"favorite"`       // 收藏数
+	Favourite    int      `json:"favourite"`      // 收藏数
 	Farward      int      `json:"farward"`        // 转发数
 }
 
@@ -47,7 +43,7 @@ func NewPostDetailResponse(post models.PostInfo) *PostDetailResponse {
 		Content:      post.Content,
 		ParentPostID: post.ParentPostID,
 		Like:         len(post.Like),
-		Favorite:     len(post.Farward),
+		Favourite:    len(post.Favourite),
 		Farward:      len(post.Farward),
 	}
 	for _, image := range post.Images {
@@ -70,10 +66,30 @@ func NewCreatePostResponse(postInfo models.PostInfo) CreatePostResponse {
 	return resp
 }
 
+// UploadPostImageResponse 上传博文图片响应结构
 type UploadPostImageResponse struct {
-	UUID string `json:"uuid"`
+	UUID string `json:"uuid"` // 图片UUID
 }
 
+// NewUploadPostImageResponse 创建新的上传博文图片响应
 func NewUploadPostImageResponse(uuid string) UploadPostImageResponse {
 	return UploadPostImageResponse{UUID: uuid}
+}
+
+// PostUserStatus 用户文章状态响应结构
+type PostUserStatus struct {
+	PostID    uint64 `json:"post_id"`   // 文章ID
+	UID       uint64 `json:"uid"`       // 用户ID
+	Like      bool   `json:"like"`      // 是否点赞
+	Favourite bool   `json:"favourite"` // 是否收藏
+}
+
+// NewPostUserStatus 创建新的用户文章状态响应
+func NewPostUserStatus(postID uint64, uid uint64, like bool, favourite bool) PostUserStatus {
+	return PostUserStatus{
+		PostID:    postID,
+		UID:       uid,
+		Like:      like,
+		Favourite: favourite,
+	}
 }

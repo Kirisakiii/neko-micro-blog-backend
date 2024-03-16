@@ -20,6 +20,7 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
+	"github.com/lib/pq"
 )
 
 // UserStore 用户信息数据库
@@ -330,4 +331,30 @@ func (store *UserStore) UpdateUserInfoByUID(uid uint64, updatedProfile *models.U
 	userProfile.Gender = updatedProfile.Gender
 
 	return store.db.Save(&userProfile).Error
+}
+
+// GetUserLikedRecord 获取用户点赞记录。
+//
+// 参数：
+//   - uid：用户ID
+//
+// 返回值：
+//   - pq.Int64Array：用户点赞记录。
+func (store *UserStore) GetUserLikedRecord(uid string) (pq.Int64Array, error) {
+	var record models.UserLikedRecord
+	result := store.db.Where("uid = ?", uid).First(&record)
+	return record.LikedPost, result.Error
+}
+
+// GetUserFavoriteRecord 获取用户收藏记录。
+//
+// 参数：
+//   - uid：用户ID
+//
+// 返回值：
+//   - pq.Int64Array：用户收藏记录。
+func (store *UserStore) GetUserFavoriteRecord(uid string) (pq.Int64Array, error) {
+	var record models.UserFavouriteRecord
+	result := store.db.Where("uid = ?", uid).First(&record)
+	return record.Favourite, result.Error
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
+	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/serializers"
 )
@@ -29,7 +30,7 @@ type PostController struct {
 // NewPostController 博文控制器工厂函数。
 //
 // 返回值：
-// - *PostController 博文控制器指针
+//   - *PostController 博文控制器指针
 func (factory *Factory) NewPostController() *PostController {
 	return &PostController{
 		postService: factory.serviceFactory.NewPostService(),
@@ -39,16 +40,48 @@ func (factory *Factory) NewPostController() *PostController {
 // NewPostListHandler 博文列表函数
 //
 // 返回值：
-// - fiber.Handle：新的博文列表函数
-func (controller *PostController) NewPostListHandler() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		posts, err := controller.postService.GetPostList()
+//   - fiber.Handle：新的博文列表函数
+func (controller *PostController) NewPostListHandler(userStore *stores.UserStore) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 获取请求参数
+		reqType := ctx.Query("type")
+		uid := ctx.Query("uid")
+		if reqType == "user" || reqType == "liked" || reqType == "favourited" {
+			_, err := strconv.ParseUint(uid, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid uid"),
+				)
+			}
+		}
+
+		// 获取帖子列表
+		var (
+			posts []uint64
+			err   error
+		)
+		switch reqType {
+		case "":
+			posts, err = controller.postService.GetPostList("all", "", userStore)
+		case "all":
+			posts, err = controller.postService.GetPostList("all", "", userStore)
+		case "user":
+			posts, err = controller.postService.GetPostList("user", uid, userStore)
+		case "liked":
+			posts, err = controller.postService.GetPostList("liked", uid, userStore)
+		case "favourited":
+			posts, err = controller.postService.GetPostList("favourited", uid, userStore)
+		default:
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "invalid type"))
+		}
 		if err != nil {
-			return c.Status(200).JSON(
+			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
 			)
 		}
-		return c.Status(200).JSON(
+
+		// 返回结果
+		return ctx.Status(200).JSON(
 			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostListResponse(posts)),
 		)
 	}
@@ -99,10 +132,10 @@ func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 	}
 }
 
-// NewDetailHandler 博文详情函数。
+// NewCreatePostHandler 返回一个用于处理创建博文请求的 Fiber 处理函数
 //
 // 返回值：
-// - fiber.Handler：新的博文详情函数
+//   - fiber.Handler：新的创建博文函数
 func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
@@ -120,7 +153,7 @@ func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 		// 验证参数
 		if reqBody.Title == "" || reqBody.Content == "" {
 			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, "post title or post content"),
+				serializers.NewResponse(consts.PARAMETER_ERROR, "post title or post content is required"),
 			)
 		}
 		if len(reqBody.Images) > 9 {
@@ -148,6 +181,53 @@ func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 	}
 }
 
+// NewPostUserStatusHandler 返回一个用于处理获取用户对帖子的状态请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的获取用户对帖子的状态函数
+func (controller *PostController) NewPostUserStatusHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取PostID
+		postID := ctx.Query("post-id")
+
+		//验证postID是否为空
+		if postID == "" {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id cannot be empty"))
+		}
+
+		// 将post ID转换为无符号整数
+		postIDUint, err := strconv.ParseUint(postID, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id must be a number"))
+		}
+
+		// 获取用户对帖子的状态
+		isLiked, isFavourited, err := controller.postService.GetPostUserStatus(int64(claims.UID), int64(postIDUint))
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
+		}
+
+		return ctx.Status(200).JSON(serializers.NewResponse(
+			consts.SUCCESS,
+			"succeed",
+			serializers.NewPostUserStatus(
+				postIDUint,
+				claims.UID,
+				isLiked,
+				isFavourited,
+			),
+		),
+		)
+	}
+}
+
+// NewUploadPostImageHandler 返回一个用于处理上传博文图片请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的上传博文图片函数
 func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 接收文件
@@ -159,7 +239,7 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 		}
 
 		// 校验文件数量
-		files := form.File["image"]
+		files := form.File["file"]
 		if len(files) > 1 {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, "the number of image cannot exceed 1"),
@@ -173,17 +253,146 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 			)
 		}
 
-		return ctx.Status(200).JSON(serializers.NewUploadPostImageResponse(UUID))
+		return ctx.Status(200).JSON(serializers.NewResponse(
+			consts.SUCCESS,
+			"succeed",
+			serializers.NewUploadPostImageResponse(UUID),
+		))
+	}
+}
+
+// NewLikePostHandler 返回一个用于处理点赞博文请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的博文点赞函数
+func (controller *PostController) NewLikePostHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取PostID
+		postID := ctx.Query("post-id")
+
+		//验证postID是否为空
+		if postID == "" {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id cannot be empty"))
+		}
+
+		// 将post ID转换为无符号整数
+		postIDUint, err := strconv.ParseUint(postID, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id must be a number"))
+		}
+
+		// 执行点赞操作
+		if err := controller.postService.LikePost(int64(claims.UID), int64(postIDUint)); err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
+		}
+
+		return ctx.JSON(serializers.NewResponse(consts.SUCCESS, "succeed"))
+	}
+}
+
+// NewCancelLikePostHandler 返回一个用于处理取消点赞博文请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的取消点赞函数
+func (controller *PostController) NewCancelLikePostHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取PostID
+		postID := ctx.Query("post-id")
+
+		//验证postID是否为空
+		if postID == "" {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id cannot be empty"))
+		}
+
+		// 将post ID转换为无符号整数
+		postIDUint, err := strconv.ParseUint(postID, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id must be a number"))
+		}
+
+		// 执行取消点赞操作
+		if err := controller.postService.CancelLikePost(int64(claims.UID), int64(postIDUint)); err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
+		}
+
+		return ctx.JSON(serializers.NewResponse(consts.SUCCESS, "succeed"))
+	}
+}
+
+// NewFavouritePostHandler 返回一个用于处理收藏博文请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的收藏博文函数
+func (controller *PostController) NewFavouritePostHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取PostID
+		postID := ctx.Query("post-id")
+
+		//验证postID是否为空
+		if postID == "" {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id cannot be empty"))
+		}
+
+		// 将post ID转换为无符号整数
+		postIDUint, err := strconv.ParseUint(postID, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id must be a number"))
+		}
+
+		// 执行收藏操作
+		if err := controller.postService.FavouritePost(int64(claims.UID), int64(postIDUint)); err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
+		}
+
+		return ctx.JSON(serializers.NewResponse(consts.SUCCESS, "succeed"))
+	}
+}
+
+// NewCancelFavouritePostHandler 返回一个用于处理取消收藏博文请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的取消收藏博文函数
+func (controller *PostController) NewCancelFavouritePostHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取PostID
+		postID := ctx.Query("post-id")
+
+		//验证postID是否为空
+		if postID == "" {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id cannot be empty"))
+		}
+
+		// 将post ID转换为无符号整数
+		postIDUint, err := strconv.ParseUint(postID, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "post id must be a number"))
+		}
+
+		// 执行取消收藏操作
+		if err := controller.postService.CancelFavouritePost(int64(claims.UID), int64(postIDUint)); err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
+		}
+
+		return ctx.JSON(serializers.NewResponse(consts.SUCCESS, "succeed"))
 	}
 }
 
 // NewDeletePostHandler 返回一个用于处理删除博文请求的 Fiber 处理函数
 //
-// 参数：
-// - controller *PostController：博文控制器实例
-//
 // 返回值：
-// - fiber.Handler：新的博文删除函数
+//   - fiber.Handler：新的博文删除函数
 func (controller *PostController) NewDeletePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 获取PostID
