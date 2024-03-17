@@ -1,9 +1,10 @@
 /*
-Package valider - NekoBlog backend server data validers
+Package validers - NekoBlog backend server data validation.
+This file is for password validation.
 Copyright (c) [2024], Author(s):
 - WhitePaper233<baizhiwp@gmail.com>
 */
-package valider
+package validers
 
 import "regexp"
 

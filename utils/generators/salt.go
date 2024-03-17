@@ -1,9 +1,10 @@
 /*
-Package generator - NekoBlog backend server generator utils
+Package generators - NekoBlog backend server generator utils
+This file is for salt generator.
 Copyright (c) [2024], Author(s):
 - WhitePaper233<baizhiwp@gmail.com>
 */
-package generator
+package generators
 
 import (
 	"crypto/rand"

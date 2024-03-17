@@ -1,5 +1,6 @@
 /*
 Package models - NekoBlog backend server database models
+This file is for user related models.
 Copyright (c) [2024], Author(s):
 - WhitePaper233<baizhiwp@gmail.com>
 */
@@ -8,19 +9,20 @@ package models
 import (
 	"time"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
 // UserInfo 用户信息模型
 type UserInfo struct {
 	gorm.Model            // 基本模型
-	UserName   string     `gorm:"unique;column:username"`        // 用户名
-	NickName   *string    `gorm:"column:nickname"`               // 昵称
-	Avatar     string     `gorm:"default:vanilla;column:avatar"` // 头像
-	Birth      *time.Time `gorm:"column:birth"`                  // 生日
-	Gender     *string    `gorm:"column:gender"`                 // 性别
-	Authority  uint64     `gorm:"default:0;column:authority"`    // 权限等级
-	Level      uint64     `gorm:"default:1;column:level"`        // 等级
+	UserName   string     `gorm:"unique;column:username"`             // 用户名
+	NickName   *string    `gorm:"column:nickname"`                    // 昵称
+	Avatar     string     `gorm:"default:vanilla.webp;column:avatar"` // 头像
+	Birth      *time.Time `gorm:"column:birth"`                       // 生日
+	Gender     *string    `gorm:"column:gender"`                      // 性别
+	Authority  uint64     `gorm:"default:0;column:authority"`         // 权限等级
+	Level      uint64     `gorm:"default:1;column:level"`             // 等级
 }
 
 // UserAuthInfo 用户认证信息模型
@@ -46,11 +48,35 @@ type UserLoginLog struct {
 	BearerToken string    `gorm:"column:bearer_token"`                // 此次登录获取到的令牌
 }
 
-// UserBannedToken 用户 Token 黑名单模型
-type UserBannedToken struct {
+// UserAvaliableToken 用户可用Token模型
+type UserAvaliableToken struct {
 	gorm.Model           // 基本模型
 	UID        uint64    `gorm:"column:uid"`          // 用户ID
 	Username   string    `gorm:"column:username"`     // 用户名
 	Token      string    `gorm:"unique;column:token"` // Token
 	ExpireTime time.Time `gorm:"column:expire_time"`  // 过期时间
+}
+
+// UserLikedRecord 用户点赞记录
+type UserLikedRecord struct {
+	gorm.Model
+	UID          uint64        `gorm:"column:uid"`                         // 用户ID
+	LikedPost    pq.Int64Array `gorm:"column:liked_post;type:bigint[]"`    // 点赞过的博文
+	LikedComment pq.Int64Array `gorm:"column:liked_comment;type:bigint[]"` // 点赞过的评论
+	LikedReply   pq.Int64Array `gorm:"column:liked_reply;type:bigint[]"`   // 点赞过的回复
+}
+
+// UserDislikeRecord 用户点踩记录
+type UserDislikeRecord struct {
+	gorm.Model
+	UID            uint64        `gorm:"column:uid"`                           // 用户ID
+	DislikeComment pq.Int64Array `gorm:"column:dislike_comment;type:bigint[]"` // 点踩过的评论
+	DislikeReply   pq.Int64Array `gorm:"column:dislike_reply;type:bigint[]"`   // 点踩过的回复
+}
+
+// UserFavouriteRecord 用户收藏记录
+type UserFavouriteRecord struct {
+	gorm.Model
+	UID       uint64        `gorm:"column:uid"`                     // 用户ID
+	Favourite pq.Int64Array `gorm:"column:favourite;type:bigint[]"` // 收藏过的博文
 }
