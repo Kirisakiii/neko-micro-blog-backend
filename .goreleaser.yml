@@ -14,17 +14,8 @@ builds:
       - linux
       - darwin
     goarch:
-      - 386
       - amd64
-      - arm
       - arm64
-    goarm:
-      - 7
-    ignore:
-      - goos: darwin
-        goarch: arm
-      - goos: darwin
-        goarch: '386'
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
       - -trimpath
@@ -38,12 +29,7 @@ builds:
     goos:
       - windows
     goarch:
-      - 386
       - amd64
-      - arm
-      - arm64
-    goarm:
-      - 7
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
       - -trimpath
