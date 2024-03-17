@@ -19,6 +19,7 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
+	"github.com/Kirisakiii/neko-micro-blog-backend/utils/functools"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/serializers"
 )
 
@@ -69,8 +70,10 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 			posts, err = controller.postService.GetPostList("user", uid, userStore)
 		case "liked":
 			posts, err = controller.postService.GetPostList("liked", uid, userStore)
+			posts = functools.Reverse(posts)
 		case "favourited":
 			posts, err = controller.postService.GetPostList("favourited", uid, userStore)
+			posts = functools.Reverse(posts)
 		default:
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "invalid type"))
 		}

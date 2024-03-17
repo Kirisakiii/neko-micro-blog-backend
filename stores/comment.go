@@ -9,6 +9,7 @@ package stores
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"gorm.io/gorm"
@@ -33,8 +34,8 @@ func (factory *Factory) NewCommentStore() *CommentStore {
 // 返回：
 //
 //	-error 正确返回nil
-func (store *CommentStore) CreateComment(uid uint64, username string, postID uint64, content string) error {
-	newComment := &models.CommentInfo{
+func (store *CommentStore) CreateComment(uid uint64, username string, postID uint64, content string) (uint64, error) {
+	newComment := models.CommentInfo{
 		PostID:   postID,
 		Username: username,
 		Content:  content,
@@ -44,11 +45,11 @@ func (store *CommentStore) CreateComment(uid uint64, username string, postID uin
 		IsPublic: true,
 	}
 
-	result := store.db.Create(newComment)
+	result := store.db.Create(&newComment)
 	if result.Error != nil {
-		return result.Error
+		return 0, result.Error
 	}
-	return nil
+	return uint64(newComment.ID), nil
 }
 
 //	ValidateCommentExistence 判断评论是否存在
@@ -110,13 +111,13 @@ func (store *CommentStore) DeleteComment(commentID uint64) error {
 // 返回值：
 //   - 成功则返回评论列表
 //   - 失败返回nil
-func (store *CommentStore) GetCommentList() ([]models.CommentInfo, error) {
-	var userComments []models.CommentInfo
-	result := store.db.Find(&userComments)
+func (store *CommentStore) GetCommentList(postID uint64) ([]models.CommentInfo, error) {
+	var commentInfos []models.CommentInfo
+	result := store.db.Where("post_id = ?", postID).Order("id desc").Find(&commentInfos)
 	if result.Error != nil {
 		return nil, result.Error
 	}
-	return userComments, nil
+	return commentInfos, nil
 }
 
 // GetCommentInfo 获取评论信息
@@ -131,4 +132,218 @@ func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo,
 	comment := models.CommentInfo{}
 	result := store.db.Where("id = ?", commentID).First(&comment)
 	return comment, result.Error
+}
+
+// GetCommentUserStatus 获取评论用户状态
+//
+// 参数：
+//   - commentID：评论ID
+//   - uid：用户ID
+//
+// 返回值：
+//   - bool：返回用户状态
+func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bool, error) {
+	userLikedRecord := models.UserLikedRecord{}
+	result := store.db.Where("uid = ?", uid).First(&userLikedRecord)
+	if result.Error != nil {
+		return false, false, result.Error
+	}
+	userDislikeRecord := models.UserDislikeRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
+	if result.Error != nil {
+		return false, false, result.Error
+	}
+
+	liked := slices.Index(userLikedRecord.LikedComment, int64(commentID)) != -1
+	disliked := slices.Index(userDislikeRecord.DislikeComment, int64(commentID)) != -1
+	return liked, disliked, nil
+}
+
+// LikeComment 点赞评论
+//
+// 参数：
+//   - commentID：评论ID
+//   - uid：用户ID
+//
+// 返回值：
+//   - error：返回点赞处理的成功与否
+func (store *CommentStore) LikeComment(uid, commentID uint64) error {
+	// 获取评论信息
+	commentInfo := models.CommentInfo{}
+	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+	userLikedRecord := models.UserLikedRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+	userDislikeRecord := models.UserDislikeRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	// 如果点踩列中存在 则先移除点踩记录
+	index := slices.Index(userDislikeRecord.DislikeComment, int64(commentID))
+	if index != -1 {
+		userDislikeRecord.DislikeComment = slices.Delete(userDislikeRecord.DislikeComment, index, index+1)
+		result = store.db.Save(&userDislikeRecord)
+		if result.Error != nil {
+			return result.Error
+		}
+	}
+	if index := slices.Index(commentInfo.Dislike, int64(uid)); index != -1 {
+		commentInfo.Dislike = slices.Delete(commentInfo.Dislike, index, index+1)
+	}
+
+	// 如果已经点赞过了
+	if index := slices.Index(userLikedRecord.LikedComment, int64(uid)); index != -1 {
+		return errors.New("you have liked this comment")
+	}
+
+	commentInfo.Like = append(commentInfo.Like, int64(uid))
+	result = store.db.Save(&commentInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	userLikedRecord.LikedComment = append(userLikedRecord.LikedComment, int64(commentID))
+	result = store.db.Save(&userLikedRecord)
+	return result.Error
+}
+
+// CancelLikeComment 取消点赞评论
+//
+// 参数：
+//   - commentID：评论ID
+//   - uid：用户ID
+//
+// 返回值：
+//   - error：返回取消点赞处理的成功与否
+func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
+	commentInfo := models.CommentInfo{}
+	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+	userLikedRecord := models.UserLikedRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	index := slices.Index(userLikedRecord.LikedComment, int64(commentID))
+	// 如果没有点赞过
+	if index == -1 {
+		return errors.New("you have not liked this comment")
+	}
+	userLikedRecord.LikedComment = slices.Delete(userLikedRecord.LikedComment, index, index+1)
+	result = store.db.Save(&userLikedRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	index = slices.Index(commentInfo.Like, int64(uid))
+	if index != -1 {
+		commentInfo.Like = slices.Delete(commentInfo.Like, index, index+1)
+		result = store.db.Save(&commentInfo)
+	}
+
+	return result.Error
+}
+
+// DislikeComment 点踩评论
+//
+// 参数：
+//   - commentID：评论ID
+//   - uid：用户ID
+//
+// 返回值：
+//   - error：返回点踩处理的成功与否
+func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
+	commentInfo := models.CommentInfo{}
+	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+	userDislikeRecord := models.UserDislikeRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+	userLikedRecord := models.UserLikedRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	// 如果点赞列中存在 则先移除点赞记录
+	index := slices.Index(userLikedRecord.LikedComment, int64(commentID))
+	if index != -1 {
+		userLikedRecord.LikedComment = slices.Delete(userLikedRecord.LikedComment, index, index+1)
+		result = store.db.Save(&userLikedRecord)
+		if result.Error != nil {
+			return result.Error
+		}
+	}
+	if index := slices.Index(commentInfo.Like, int64(uid)); index != -1 {
+		commentInfo.Like = slices.Delete(commentInfo.Like, index, index+1)
+	}
+
+	// 如果已经点踩过了
+	if index := slices.Index(userDislikeRecord.DislikeComment, int64(uid)); index != -1 {
+		return errors.New("you have disliked this comment")
+	}
+
+	commentInfo.Dislike = append(commentInfo.Dislike, int64(uid))
+	result = store.db.Save(&commentInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	userDislikeRecord.DislikeComment = append(userDislikeRecord.DislikeComment, int64(commentID))
+	result = store.db.Save(&userDislikeRecord)
+	return result.Error
+}
+
+// CancelDislikeComment 取消点踩评论
+//
+// 参数：
+//   - commentID：评论ID
+//   - uid：用户ID
+//
+// 返回值：
+//   - error：返回取消点踩处理的成功与否
+func (store *CommentStore) CancelDislikeComment(uid, commentID uint64) error {
+	commentInfo := models.CommentInfo{}
+	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	if result.Error != nil {
+		return result.Error
+	}
+	userDislikeRecord := models.UserDislikeRecord{}
+	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	index := slices.Index(userDislikeRecord.DislikeComment, int64(commentID))
+	// 如果没有点踩过
+	if index == -1 {
+		return errors.New("you have not disliked this comment")
+	}
+	userDislikeRecord.DislikeComment = slices.Delete(userDislikeRecord.DislikeComment, index, index+1)
+	result = store.db.Save(&userDislikeRecord)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	index = slices.Index(commentInfo.Dislike, int64(uid))
+	if index != -1 {
+		commentInfo.Dislike = slices.Delete(commentInfo.Dislike, index, index+1)
+		result = store.db.Save(&commentInfo)
+	}
+
+	return result.Error
 }
