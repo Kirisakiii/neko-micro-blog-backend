@@ -40,28 +40,28 @@ func (factory *Factory) NewCommentService() *CommentService {
 // 返回值：
 //
 //	-error 创建失败返回创建失败时候的具体信息
-func (service *CommentService) CreateComment(uid uint64, postID uint64, content string, postStore *stores.PostStore, userStore *stores.UserStore) error {
+func (service *CommentService) CreateComment(uid uint64, postID uint64, content string, postStore *stores.PostStore, userStore *stores.UserStore) (uint64, error) {
 	// 校验评论是否存在
 	existance, err := postStore.ValidatePostExistence(postID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !existance {
-		return errors.New("post does not exist")
+		return 0, errors.New("post does not exist")
 	}
 
 	// 根据 UID 获取 Username
 	user, err := userStore.GetUserByUID(uid)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// 调用存储层的方法存储评论
-	err = service.commentStore.CreateComment(uid, user.UserName, postID, content)
+	commentID, err := service.commentStore.CreateComment(uid, user.UserName, postID, content)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return commentID, nil
 }
 
 // UpdateComment 修改评论
@@ -126,8 +126,8 @@ func (service *CommentService) DeleteComment(commentID uint64) error {
 // 返回值：
 //   - 成功则返回评论列表
 //   - 失败返回nil
-func (service *CommentService) GetCommentList() ([]models.CommentInfo, error) {
-	return service.commentStore.GetCommentList()
+func (service *CommentService) GetCommentList(postID uint64) ([]models.CommentInfo, error) {
+	return service.commentStore.GetCommentList(postID)
 }
 
 // GetCommentInfo 获取评论信息
@@ -136,5 +136,152 @@ func (service *CommentService) GetCommentList() ([]models.CommentInfo, error) {
 //   - 成功返回评论体
 //   - 失败返回nil
 func (service *CommentService) GetCommentInfo(commentID uint64) (models.CommentInfo, error) {
+	// 检查评论是否存在
+	exists, err := service.commentStore.ValidateCommentExistence(commentID)
+	if err != nil {
+		return models.CommentInfo{}, err
+	}
+	if !exists {
+		return models.CommentInfo{}, errors.New("comment does not exist")
+	}
+
 	return service.commentStore.GetCommentInfo(commentID)
+}
+
+// GetCommentUserStatus
+//
+// 参数：
+//   - uid: 用户ID
+//   - commentID: 评论ID
+//
+// 返回值：
+//   - bool: 是否点赞
+//   - bool: 是否点踩
+//   - error: 错误信息
+func (service *CommentService) GetCommentUserStatus(uid, commentID uint64) (bool, bool, error) {
+	// 检查评论是否存在
+	exists, err := service.commentStore.ValidateCommentExistence(commentID)
+	if err != nil {
+		return false, false, err
+	}
+	if !exists {
+		return false, false, errors.New("comment does not exist")
+	}
+
+	// 调用存储层的方法获取用户对评论的点赞和点踩状态
+	isLiked, isDisliked, err := service.commentStore.GetCommentUserStatus(uid, commentID)
+	if err != nil {
+		return false, false, err
+	}
+
+	// 返回用户对评论的点赞和点踩状态
+	return isLiked, isDisliked, nil
+}
+
+// LikeComment 点赞评论
+//
+// 参数：
+//   - commentID: 评论ID
+//
+// 返回值：
+//   - error 返回处理点赞的信息
+func (service *CommentService) LikeComment(uid, commentID uint64) error {
+	// 检查评论是否存在
+	exists, err := service.commentStore.ValidateCommentExistence(commentID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("comment does not exist")
+	}
+
+	// 调用存储层的方法点赞评论
+	err = service.commentStore.LikeComment(uid, commentID)
+	if err != nil {
+		return err
+	}
+
+	// 如果点赞成功，返回nil
+	return nil
+}
+
+// CancelLikeComment
+//
+// 参数：
+//   - commentID: 评论ID
+//
+// 返回值：
+//   - error 返回处理取消点赞的信息
+func (service *CommentService) CancelLikeComment(uid, commentID uint64) error {
+	// 检查评论是否存在
+	exists, err := service.commentStore.ValidateCommentExistence(commentID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("comment does not exist")
+	}
+
+	// 调用存储层的方法取消点赞评论
+	err = service.commentStore.CancelLikeComment(uid, commentID)
+	if err != nil {
+		return err
+	}
+
+	// 如果取消点赞成功，返回nil
+	return nil
+}
+
+// DislikeComment 点踩评论
+//
+// 参数：
+//   - commentID: 评论ID
+//
+// 返回值：
+//   - error 返回处理点踩的信息
+func (service *CommentService) DislikeComment(uid, commentID uint64) error {
+	// 检查评论是否存在
+	exists, err := service.commentStore.ValidateCommentExistence(commentID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("comment does not exist")
+	}
+
+	// 调用存储层的方法点踩评论
+	err = service.commentStore.DislikeComment(uid, commentID)
+	if err != nil {
+		return err
+	}
+
+	// 如果点踩成功，返回nil
+	return nil
+}
+
+// CancelDislikeComment 取消点踩评论
+//
+// 参数：
+//   - commentID: 评论ID
+//
+// 返回值：
+//   - error 返回处理取消点踩的信息
+func (service *CommentService) CancelDislikeComment(uid, commentID uint64) error {
+	// 检查评论是否存在
+	exists, err := service.commentStore.ValidateCommentExistence(commentID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("comment does not exist")
+	}
+
+	// 调用存储层的方法取消点踩评论
+	err = service.commentStore.CancelDislikeComment(uid, commentID)
+	if err != nil {
+		return err
+	}
+
+	// 如果取消点踩成功，返回nil
+	return nil
 }

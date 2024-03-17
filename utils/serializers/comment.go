@@ -40,7 +40,6 @@ type CommentDetailResponse struct {
 // NewCommentDetailResponse 创建评论实例
 func NewCommentDetailResponse(comment models.CommentInfo) *CommentDetailResponse {
 	// 创建一个新的 CommentProfileData 实例
-	// TODO: 实现 Is_liked / Is_disliked
 	profileData := &CommentDetailResponse{
 		CommentID:     uint64(comment.ID),
 		PostID:        comment.PostID,
@@ -58,10 +57,24 @@ type CreateCommentResponse struct {
 	ID uint64 `json:"id"`
 }
 
-// NewCommentResponse 用于创建 CommentResponse 实例
-func NewCreateCommentResponse(commentInfo models.CommentInfo) CreateCommentResponse {
+// NewCreateCommentResponse 用于创建 CommentResponse 实例
+func NewCreateCommentResponse(commentID uint64) CreateCommentResponse {
 	var resp = CreateCommentResponse{
-		ID: uint64(commentInfo.ID),
+		ID: commentID,
 	}
 	return resp
+}
+
+// CommentUserStatusResponse 评论用户状态响应
+type CommentUserStatusResponse struct {
+	IsLiked    bool `json:"is_liked"`    // 是否点赞
+	IsDisliked bool `json:"is_disliked"` // 是否点踩
+}
+
+// NewCommentUserStatusResponse 创建评论用户状态响应
+func NewCommentUserStatusResponse(isLiked, isDisliked bool) CommentUserStatusResponse {
+	return CommentUserStatusResponse{
+		IsLiked:    isLiked,
+		IsDisliked: isDisliked,
+	}
 }
