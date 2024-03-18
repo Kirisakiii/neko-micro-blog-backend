@@ -179,6 +179,12 @@ func main() {
 	comment.Get("/list", commentController.NewCommentListHandler())                                                                                           // 获取评论列表
 	comment.Get("/detail", commentController.NewCommentDetailHandler())                                                                                       // 获取评论详情信息
 
+	//Reply 路由
+	replycontroller := controllerFactory.NewReplyController()
+	reply := api.Group("/reply")
+	reply.Post("/new", authMiddleware.NewMiddleware(), replycontroller.NewCreateReplyHandler(storeFactory.NewCommentStore(), storeFactory.NewUserStore())) // 创建回复
+	reply.Post("/edit", authMiddleware.NewMiddleware(), replycontroller.NewUpdateReplyHandler())                                                           // 修改回复
+	reply.Post("/delete", authMiddleware.NewMiddleware(), replycontroller.DeleteReplyHandler())                                                            // 删除回复
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
 }
