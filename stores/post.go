@@ -14,7 +14,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -163,7 +162,15 @@ func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.
 	return postInfo, result.Error
 }
 
-func (store *PostStore) CachePostIamge(image []byte) (string, error) {
+// CachePostImage 缓存博文图片
+//
+// 参数：
+//   - image []byte：待缓存的图片
+//
+// 返回值：
+//   - string：如果缓存成功，返回缓存图片的UUID；否则返回空字符串
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (store *PostStore) CachePostImage(image []byte) (string, error) {
 	// 生成文件名
 	var (
 		fileNameBuilder strings.Builder
@@ -203,6 +210,14 @@ func (store *PostStore) CachePostIamge(image []byte) (string, error) {
 	return UUID, result.Error
 }
 
+// CheckCacheImageExistence 检查缓存图片是否存在
+//
+// 参数：
+//   - uuid string：待检查的缓存图片UUID
+//
+// 返回值：
+//   - bool：如果缓存图片存在，返回true；否则返回false
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) CheckCacheImageExistence(uuid string) (bool, error) {
 	// 检查缓存图片是否存在
 	var cachedPostImage models.CachedPostImage
@@ -234,37 +249,16 @@ func (store *PostStore) CheckCacheImageExistence(uuid string) (bool, error) {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) LikePost(uid, postID int64) error {
-	// 检测目标博文是否存在
-	var postInfo models.PostInfo
-	result := store.db.Where("id = ?", postID).First(&postInfo)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return errors.New("post not found")
-	}
+	// 更新博文点赞记录
+	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_append(\"like\", ?)", uid))
 	if result.Error != nil {
 		return result.Error
 	}
-
-	// 检查是否已经点赞
-	var userLikedRecord models.UserLikedRecord
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-	if slices.Contains(userLikedRecord.LikedPost, postID) {
+	if result.RowsAffected == 0 {
 		return errors.New("user has liked this post")
 	}
 
-	// 更新用户点赞记录
-	userLikedRecord.LikedPost = append(userLikedRecord.LikedPost, postID)
-	result = store.db.Save(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	// 更新博文点赞记录
-	postInfo.Like = append(postInfo.Like, uid)
-	result = store.db.Save(&postInfo)
-	return result.Error
+	return nil
 }
 
 // CancelLikePost 取消点赞博文
@@ -276,44 +270,13 @@ func (store *PostStore) LikePost(uid, postID int64) error {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) CancelLikePost(uid, postID int64) error {
-	// 检测目标博文是否存在
-	var postInfo models.PostInfo
-	result := store.db.Where("id = ?", postID).First(&postInfo)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return errors.New("post not found")
-	}
-	if result.Error != nil {
-		return result.Error
-	}
-
-	// 检查是否已经点赞
-	var userLikedRecord models.UserLikedRecord
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-	if !slices.Contains(userLikedRecord.LikedPost, postID) {
-		return errors.New("user has not liked this post")
-	}
-
-	// 更新用户点赞记录
-	index := slices.Index(userLikedRecord.LikedPost, postID)
-	if index != -1 {
-		userLikedRecord.LikedPost = slices.Delete(userLikedRecord.LikedPost, index, index+1)
-		result = store.db.Save(&userLikedRecord)
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-
 	// 更新博文点赞记录
-	index = slices.Index(postInfo.Like, uid)
-	if index != -1 {
-		postInfo.Like = slices.Delete(postInfo.Like, index, index+1)
-		result = store.db.Save(&postInfo)
-		if result.Error != nil {
-			return result.Error
-		}
+	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("user has not liked this post")
 	}
 
 	return nil
@@ -328,40 +291,16 @@ func (store *PostStore) CancelLikePost(uid, postID int64) error {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) FavouritePost(uid, postID int64) error {
-	// 检测目标博文是否存在
-	var postInfo models.PostInfo
-	result := store.db.Where("id = ?", postID).First(&postInfo)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return errors.New("post not found")
-	}
+	// 更新博文收藏记录
+	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).Update("favourite", gorm.Expr("array_append(\"favourite\", ?)", uid))
 	if result.Error != nil {
 		return result.Error
 	}
-
-	// 检查是否已经收藏
-	var userFavouriteRecord models.UserFavouriteRecord
-	result = store.db.Where("uid = ?", uid).First(&userFavouriteRecord)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return errors.New("user not found")
-	}
-	if result.Error != nil {
-		return result.Error
-	}
-	if slices.Contains(userFavouriteRecord.Favourite, postID) {
+	if result.RowsAffected == 0 {
 		return errors.New("user has favourite this post")
 	}
 
-	// 更新用户收藏记录
-	userFavouriteRecord.Favourite = append(userFavouriteRecord.Favourite, postID)
-	result = store.db.Save(&userFavouriteRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	// 更新博文收藏记录
-	postInfo.Favourite = append(postInfo.Favourite, uid)
-	result = store.db.Save(&postInfo)
-	return result.Error
+	return nil
 }
 
 // CancelFavouritePost 取消收藏博文
@@ -373,47 +312,13 @@ func (store *PostStore) FavouritePost(uid, postID int64) error {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) CancelFavouritePost(uid, postID int64) error {
-	// 检测目标博文是否存在
-	var postInfo models.PostInfo
-	result := store.db.Where("id = ?", postID).First(&postInfo)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return errors.New("post not found")
-	}
-	if result.Error != nil {
-		return result.Error
-	}
-
-	// 检查是否已经收藏
-	var userFavouriteRecord models.UserFavouriteRecord
-	result = store.db.Where("uid = ?", uid).First(&userFavouriteRecord)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return errors.New("user not found")
-	}
-	if result.Error != nil {
-		return result.Error
-	}
-	if !slices.Contains(userFavouriteRecord.Favourite, postID) {
-		return errors.New("user has not favourite this post")
-	}
-
-	// 更新用户收藏记录
-	index := slices.Index(userFavouriteRecord.Favourite, postID)
-	if index != -1 {
-		userFavouriteRecord.Favourite = slices.Delete(userFavouriteRecord.Favourite, index, index+1)
-		result = store.db.Save(&userFavouriteRecord)
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-
 	// 更新博文收藏记录
-	index = slices.Index(postInfo.Favourite, uid)
-	if index != -1 {
-		postInfo.Favourite = slices.Delete(postInfo.Favourite, index, index+1)
-		result = store.db.Save(&postInfo)
-		if result.Error != nil {
-			return result.Error
-		}
+	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).Update("favourite", gorm.Expr("array_remove(\"favourite\", ?)", uid))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("user has not favourite this post")
 	}
 
 	return nil
@@ -430,23 +335,20 @@ func (store *PostStore) CancelFavouritePost(uid, postID int64) error {
 //   - bool：用户是否收藏
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) GetPostUserStatus(uid, postID int64) (bool, bool, error) {
-	// 获取用户点赞记录
-	var userLikedRecord models.UserLikedRecord
-	result := store.db.Where("uid = ?", uid).First(&userLikedRecord)
+	var count int64
+	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND ? = ANY(\"like\")", postID, uid).Count(&count)
 	if result.Error != nil {
 		return false, false, result.Error
 	}
-	liked := slices.Contains(userLikedRecord.LikedPost, postID)
+	isLiked := count > 0
 
-	// 获取用户收藏记录
-	var userFavouriteRecord models.UserFavouriteRecord
-	result = store.db.Where("uid = ?", uid).First(&userFavouriteRecord)
+	result = store.db.Model(&models.PostInfo{}).Where("id = ? AND ? = ANY(\"favourite\")", postID, uid).Count(&count)
 	if result.Error != nil {
 		return false, false, result.Error
 	}
-	favourite := slices.Contains(userFavouriteRecord.Favourite, postID)
+	isFavourited := count > 0
 
-	return liked, favourite, nil
+	return isLiked, isFavourited, nil
 }
 
 // DeletePost 通过博文ID删除博文的存储方法

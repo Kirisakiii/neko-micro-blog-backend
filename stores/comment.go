@@ -9,7 +9,6 @@ package stores
 
 import (
 	"errors"
-	"slices"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"gorm.io/gorm"
@@ -143,20 +142,20 @@ func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo,
 // 返回值：
 //   - bool：返回用户状态
 func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bool, error) {
-	userLikedRecord := models.UserLikedRecord{}
-	result := store.db.Where("uid = ?", uid).First(&userLikedRecord)
+	var count int64
+	result := store.db.Model(&models.CommentInfo{}).Where("id = ? AND ? = ANY(\"like\")", commentID, uid).Count(&count)
 	if result.Error != nil {
 		return false, false, result.Error
 	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return false, false, result.Error
-	}
+	isLiked := count > 0
 
-	liked := slices.Index(userLikedRecord.LikedComment, int64(commentID)) != -1
-	disliked := slices.Index(userDislikeRecord.DislikeComment, int64(commentID)) != -1
-	return liked, disliked, nil
+	result = store.db.Model(&models.CommentInfo{}).Where("id = ? AND ? = ANY(\"dislike\")", commentID, uid).Count(&count)
+	if result.Error != nil {
+		return false, false, result.Error
+	}
+	isDisliked := count > 0
+
+	return isLiked, isDisliked, nil
 }
 
 // LikeComment 点赞评论
@@ -168,50 +167,26 @@ func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bo
 // 返回值：
 //   - error：返回点赞处理的成功与否
 func (store *CommentStore) LikeComment(uid, commentID uint64) error {
-	// 获取评论信息
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	tx := store.db.Begin()
+
+	// 删除点踩记录
+	result := tx.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"dislike\"", commentID, uid).Update("dislike", gorm.Expr("array_remove(\"dislike\", ?)", uid))
 	if result.Error != nil {
-		return result.Error
-	}
-	userLikedRecord := models.UserLikedRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
+		tx.Rollback()
 		return result.Error
 	}
 
-	// 如果点踩列中存在 则先移除点踩记录
-	index := slices.Index(userDislikeRecord.DislikeComment, int64(commentID))
-	if index != -1 {
-		userDislikeRecord.DislikeComment = slices.Delete(userDislikeRecord.DislikeComment, index, index+1)
-		result = store.db.Save(&userDislikeRecord)
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	if index := slices.Index(commentInfo.Dislike, int64(uid)); index != -1 {
-		commentInfo.Dislike = slices.Delete(commentInfo.Dislike, index, index+1)
-	}
-
-	// 如果已经点赞过了
-	if index := slices.Index(userLikedRecord.LikedComment, int64(uid)); index != -1 {
-		return errors.New("you have liked this comment")
-	}
-
-	commentInfo.Like = append(commentInfo.Like, int64(uid))
-	result = store.db.Save(&commentInfo)
+	// 更新博文点赞记录
+	result = tx.Model(&models.CommentInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ comment_infos.\"like\"", commentID, uid).Update("like", gorm.Expr("array_append(\"like\", ?)", uid))
 	if result.Error != nil {
+		tx.Rollback()
 		return result.Error
 	}
+	if result.RowsAffected == 0 {
+		return errors.New("user has liked this comment")
+	}
 
-	userLikedRecord.LikedComment = append(userLikedRecord.LikedComment, int64(commentID))
-	result = store.db.Save(&userLikedRecord)
-	return result.Error
+	return tx.Commit().Error
 }
 
 // CancelLikeComment 取消点赞评论
@@ -223,35 +198,16 @@ func (store *CommentStore) LikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回取消点赞处理的成功与否
 func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	// 更新博文点赞记录
+	result := store.db.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"like\"", commentID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
 	if result.Error != nil {
 		return result.Error
 	}
-	userLikedRecord := models.UserLikedRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
+	if result.RowsAffected == 0 {
+		return errors.New("user has not liked this comment")
 	}
 
-	index := slices.Index(userLikedRecord.LikedComment, int64(commentID))
-	// 如果没有点赞过
-	if index == -1 {
-		return errors.New("you have not liked this comment")
-	}
-	userLikedRecord.LikedComment = slices.Delete(userLikedRecord.LikedComment, index, index+1)
-	result = store.db.Save(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	index = slices.Index(commentInfo.Like, int64(uid))
-	if index != -1 {
-		commentInfo.Like = slices.Delete(commentInfo.Like, index, index+1)
-		result = store.db.Save(&commentInfo)
-	}
-
-	return result.Error
+	return nil
 }
 
 // DislikeComment 点踩评论
@@ -263,49 +219,26 @@ func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回点踩处理的成功与否
 func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	tx := store.db.Begin()
+
+	// 删除点赞记录
+	result := tx.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"like\"", commentID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
 	if result.Error != nil {
-		return result.Error
-	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-	userLikedRecord := models.UserLikedRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
+		tx.Rollback()
 		return result.Error
 	}
 
-	// 如果点赞列中存在 则先移除点赞记录
-	index := slices.Index(userLikedRecord.LikedComment, int64(commentID))
-	if index != -1 {
-		userLikedRecord.LikedComment = slices.Delete(userLikedRecord.LikedComment, index, index+1)
-		result = store.db.Save(&userLikedRecord)
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	if index := slices.Index(commentInfo.Like, int64(uid)); index != -1 {
-		commentInfo.Like = slices.Delete(commentInfo.Like, index, index+1)
-	}
-
-	// 如果已经点踩过了
-	if index := slices.Index(userDislikeRecord.DislikeComment, int64(uid)); index != -1 {
-		return errors.New("you have disliked this comment")
-	}
-
-	commentInfo.Dislike = append(commentInfo.Dislike, int64(uid))
-	result = store.db.Save(&commentInfo)
+	// 更新博文点踩记录
+	result = tx.Model(&models.CommentInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ comment_infos.\"dislike\"", commentID, uid).Update("dislike", gorm.Expr("array_append(\"dislike\", ?)", uid))
 	if result.Error != nil {
+		tx.Rollback()
 		return result.Error
 	}
+	if result.RowsAffected == 0 {
+		return errors.New("user has disliked this comment")
+	}
 
-	userDislikeRecord.DislikeComment = append(userDislikeRecord.DislikeComment, int64(commentID))
-	result = store.db.Save(&userDislikeRecord)
-	return result.Error
+	return tx.Commit().Error
 }
 
 // CancelDislikeComment 取消点踩评论
@@ -317,33 +250,14 @@ func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回取消点踩处理的成功与否
 func (store *CommentStore) CancelDislikeComment(uid, commentID uint64) error {
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
+	// 更新博文点踩记录
+	result := store.db.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"dislike\"", commentID, uid).Update("dislike", gorm.Expr("array_remove(\"dislike\", ?)", uid))
 	if result.Error != nil {
 		return result.Error
 	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
+	if result.RowsAffected == 0 {
+		return errors.New("user has not disliked this comment")
 	}
 
-	index := slices.Index(userDislikeRecord.DislikeComment, int64(commentID))
-	// 如果没有点踩过
-	if index == -1 {
-		return errors.New("you have not disliked this comment")
-	}
-	userDislikeRecord.DislikeComment = slices.Delete(userDislikeRecord.DislikeComment, index, index+1)
-	result = store.db.Save(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	index = slices.Index(commentInfo.Dislike, int64(uid))
-	if index != -1 {
-		commentInfo.Dislike = slices.Delete(commentInfo.Dislike, index, index+1)
-		result = store.db.Save(&commentInfo)
-	}
-
-	return result.Error
+	return nil
 }

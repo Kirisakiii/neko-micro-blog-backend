@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
 	fiberLogger "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
@@ -131,12 +129,6 @@ func main() {
 		Level: cfg.Compress.Level,
 	}))
 
-	// Limiter 中间件
-	limiterMiddleware := limiter.New(limiter.Config{
-		Max:        1,
-		Expiration: 1 * time.Second,
-	})
-
 	// Auth 中间件
 	authMiddleware := middlewareFactory.NewTokenAuthMiddleware()
 
@@ -169,9 +161,9 @@ func main() {
 	post := api.Group("/post")
 	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                              // 获取文章列表
 	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())            // 获取用户文章状态
-	post.Post("/new", authMiddleware.NewMiddleware(), limiterMiddleware, postController.NewCreatePostHandler())    // 创建文章
+	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                       // 创建文章
 	post.Post("/upload-img", authMiddleware.NewMiddleware(), postController.NewUploadPostImageHandler())           // 上传博文图片
-	post.Post("/like", authMiddleware.NewMiddleware(), limiterMiddleware, postController.NewLikePostHandler())     // 点赞文章
+	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler())                        // 点赞文章
 	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler())           // 取消点赞文章
 	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler())              // 收藏文章
 	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler()) // 取消收藏文章
@@ -181,15 +173,15 @@ func main() {
 	// Comment 路由
 	commentController := controllerFactory.NewCommentController()
 	comment := api.Group("/comment")
-	comment.Get("/list", commentController.NewCommentListHandler())                                                                        // 获取评论列表
-	comment.Get("/detail", commentController.NewCommentDetailHandler())                                                                    // 获取评论详情信息
-	comment.Get("/user-status", authMiddleware.NewMiddleware(), commentController.NewCommentUserStatusHandler())                           // 获取用户评论状态
-	comment.Post("/edit", authMiddleware.NewMiddleware(), commentController.NewUpdateCommentHandler())                                     // 修改评论
-	comment.Post("/delete", authMiddleware.NewMiddleware(), commentController.DeleteCommentHandler())                                      // 删除评论
-	comment.Post("/like", authMiddleware.NewMiddleware(), limiterMiddleware, commentController.NewLikeCommentHandler())                    // 点赞评论
-	comment.Post("/cancel-like", authMiddleware.NewMiddleware(), limiterMiddleware, commentController.NewCancelLikeCommentHandler())       // 取消点赞评论
-	comment.Post("/dislike", authMiddleware.NewMiddleware(), limiterMiddleware, commentController.NewDislikeCommentHandler())              // 踩评论
-	comment.Post("/cancel-dislike", authMiddleware.NewMiddleware(), limiterMiddleware, commentController.NewCancelDislikeCommentHandler()) // 取消踩评论
+	comment.Get("/list", commentController.NewCommentListHandler())                                                     // 获取评论列表
+	comment.Get("/detail", commentController.NewCommentDetailHandler())                                                 // 获取评论详情信息
+	comment.Get("/user-status", authMiddleware.NewMiddleware(), commentController.NewCommentUserStatusHandler())        // 获取用户评论状态
+	comment.Post("/edit", authMiddleware.NewMiddleware(), commentController.NewUpdateCommentHandler())                  // 修改评论
+	comment.Post("/delete", authMiddleware.NewMiddleware(), commentController.DeleteCommentHandler())                   // 删除评论
+	comment.Post("/like", authMiddleware.NewMiddleware(), commentController.NewLikeCommentHandler())                    // 点赞评论
+	comment.Post("/cancel-like", authMiddleware.NewMiddleware(), commentController.NewCancelLikeCommentHandler())       // 取消点赞评论
+	comment.Post("/dislike", authMiddleware.NewMiddleware(), commentController.NewDislikeCommentHandler())              // 踩评论
+	comment.Post("/cancel-dislike", authMiddleware.NewMiddleware(), commentController.NewCancelDislikeCommentHandler()) // 取消踩评论
 	comment.Post("/new", authMiddleware.NewMiddleware(), commentController.NewCreateCommentHandler(
 		storeFactory.NewPostStore(),
 		storeFactory.NewUserStore(),

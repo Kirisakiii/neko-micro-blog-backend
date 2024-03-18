@@ -159,7 +159,7 @@ func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (st
 	}
 
 	// 保存在暂存区并返回UUID
-	return service.postStore.CachePostIamge(convertedImage)
+	return service.postStore.CachePostImage(convertedImage)
 }
 
 // LikePost 点赞博文
