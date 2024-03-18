@@ -243,6 +243,11 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 
 		// 校验文件数量
 		files := form.File["file"]
+		if len(files) < 1 {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "image is required"),
+			)
+		}
 		if len(files) > 1 {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, "the number of image cannot exceed 1"),
