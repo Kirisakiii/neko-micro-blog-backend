@@ -508,8 +508,8 @@ func (store *UserStore) AddUserFavoriteRecord(uid, postID int64, tx *gorm.DB) er
 	}
 
 	result := tx.Model(&models.UserPostStatus{}).
-		Where("uid = ? AND NOT ARRAY[?::bigint] <@ \"favourite\"", uid, postID).
-		Update("favourite", gorm.Expr("array_append(\"favourite\", ?)", postID))
+		Where("uid = ? AND NOT ARRAY[?::bigint] <@ \"favourited\"", uid, postID).
+		Update("favourited", gorm.Expr("array_append(\"favourited\", ?)", postID))
 
 	if result.Error != nil {
 		tx.Rollback()
@@ -539,8 +539,8 @@ func (store *UserStore) RemoveUserFavoriteRecord(uid, postID int64, tx *gorm.DB)
 	}
 
 	result := tx.Model(&models.UserPostStatus{}).
-		Where("uid = ? AND ARRAY[?::bigint] <@ \"favourite\"", uid, postID).
-		Update("favourite", gorm.Expr("array_remove(\"favourite\", ?)", postID))
+		Where("uid = ? AND ARRAY[?::bigint] <@ \"favourited\"", uid, postID).
+		Update("favourited", gorm.Expr("array_remove(\"favourited\", ?)", postID))
 
 	if result.Error != nil {
 		tx.Rollback()
