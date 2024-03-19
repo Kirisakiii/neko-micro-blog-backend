@@ -7,13 +7,15 @@ Copyright (c) [2024], Author(s):
 package middlewares
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/parsers"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/serializers"
-	"github.com/Kirisakiii/neko-micro-blog-backend/utils/validers"
 )
 
 // TokenAuthMiddleware 认证中间件
@@ -54,16 +56,14 @@ func (middleware *TokenAuthMiddleware) NewMiddleware() fiber.Handler {
 
 		// 验证 Token
 		claims, err := parsers.ParseToken(token)
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.AUTH_ERROR, "bearer token is expired"),
+			)
+		}
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.AUTH_ERROR, err.Error()),
-			)
-		}
-
-		// 检验 Token 是否在有效期内
-		if !validers.ValideTokenClaims(claims) {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.AUTH_ERROR, "bearer token is expired"),
 			)
 		}
 

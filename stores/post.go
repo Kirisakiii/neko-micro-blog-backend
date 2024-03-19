@@ -10,7 +10,9 @@ package stores
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,12 +23,15 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 // PostStore 博文信息数据库
 type PostStore struct {
-	db *gorm.DB
+	db  *gorm.DB
+	rds *redis.Client
 }
 
 // NewPostStore 是一个工厂方法，用于创建 PostStore 的新实例。
@@ -37,7 +42,7 @@ type PostStore struct {
 // 返回值
 // 它初始化并返回一个 PostStore，并关联了相应的 gorm.DB。
 func (factory *Factory) NewPostStore() *PostStore {
-	return &PostStore{factory.db}
+	return &PostStore{db: factory.db, rds: factory.rds}
 }
 
 // GetPostList 获取适用于用户查看的帖子信息列表。
@@ -116,13 +121,13 @@ func (store *PostStore) GetPostInfo(postID uint64) (models.PostInfo, error) {
 func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.PostCreateBody) (models.PostInfo, error) {
 	var imageFileNames []string
 	// 将文件复制出缓存
-	for _, image := range postReqData.Images {
-		srcImage, err := os.Open(filepath.Join(consts.POST_IMAGE_CACHE_PATH, image+".webp"))
+	for _, imageUUID := range postReqData.Images {
+		srcImage, err := os.Open(filepath.Join(consts.POST_IMAGE_CACHE_PATH, imageUUID+".webp"))
 		if err != nil {
 			return models.PostInfo{}, err
 		}
 		defer srcImage.Close()
-		dstImage, err := os.Create(filepath.Join(consts.POST_IMAGE_PATH, image+".webp"))
+		dstImage, err := os.Create(filepath.Join(consts.POST_IMAGE_PATH, imageUUID+".webp"))
 		if err != nil {
 			return models.PostInfo{}, err
 		}
@@ -131,20 +136,37 @@ func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.
 		if err != nil {
 			return models.PostInfo{}, err
 		}
-		imageFileNames = append(imageFileNames, image+".webp")
+		imageFileNames = append(imageFileNames, imageUUID+".webp")
 
-		// 删除缓存中的文件
-		result := store.db.Create(&models.DeletedCachedImage{
-			FileName: image + ".webp",
-		})
-		if result.Error != nil {
-			return models.PostInfo{}, result.Error
+		// 删除缓存图片
+		ctx := context.Background()
+		tx := store.rds.TxPipeline()
+
+		_, err = tx.XAdd(ctx, &redis.XAddArgs{
+			Stream: consts.CACHE_IMG_CLEAN_STREAM,
+			Values: map[string]interface{}{"filename": imageUUID + ".webp"},
+		}).Result()
+		if err != nil {
+			tx.Discard()
+			return models.PostInfo{}, err
 		}
 
 		// 删除数据库记录
-		result = store.db.Where("file_name = ?", image+".webp").Unscoped().Delete(&models.CachedPostImage{})
-		if result.Error != nil {
-			return models.PostInfo{}, result.Error
+		var sb strings.Builder
+		sb.WriteString(consts.CACHE_IMAGE_LIST)
+		sb.WriteString(":")
+		sb.WriteString(imageUUID)
+		fmt.Println(sb.String())
+		_, err = tx.Del(ctx, sb.String()).Result()
+		if err != nil {
+			tx.Discard()
+			return models.PostInfo{}, err
+		}
+
+		_, err = tx.Exec(ctx)
+		if err != nil {
+			tx.Discard()
+			return models.PostInfo{}, err
 		}
 	}
 
@@ -156,6 +178,9 @@ func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.
 		Title:        postReqData.Title,
 		Content:      postReqData.Content,
 		Images:       imageFileNames,
+		Like:         pq.Int64Array{},
+		Favourite:    pq.Int64Array{},
+		Farward:      pq.Int64Array{},
 		IsPublic:     true,
 	}
 	result := store.db.Create(&postInfo)
@@ -202,15 +227,25 @@ func (store *PostStore) CachePostImage(image []byte) (string, error) {
 	}
 
 	// 写入缓存列表
-	cachedPostImage := models.CachedPostImage{
-		FileName:   fileNameBuilder.String(),
-		ExpireTime: time.Now().Add(consts.CACHE_IMAGE_EXPIRE_TIME).Unix(),
+	ctx := context.Background()
+	var sb strings.Builder
+	sb.WriteString(consts.CACHE_IMAGE_LIST)
+	sb.WriteString(":")
+	sb.WriteString(UUID)
+
+	_, err = store.rds.HSet(ctx, sb.String(), map[string]interface{}{
+		"filename": fileNameBuilder.String(),
+		"expire":   time.Now().Add(consts.CACHE_IMAGE_EXPIRE_TIME * time.Second).Unix(),
+	}).Result()
+
+	if err != nil {
+		return "", err
 	}
-	result := store.db.Create(&cachedPostImage)
-	return UUID, result.Error
+
+	return UUID, nil
 }
 
-// CheckCacheImageExistence 检查缓存图片是否存在
+// CheckCacheImageAvaliable 检查缓存图片是否存在
 //
 // 参数：
 //   - uuid string：待检查的缓存图片UUID
@@ -218,20 +253,60 @@ func (store *PostStore) CachePostImage(image []byte) (string, error) {
 // 返回值：
 //   - bool：如果缓存图片存在，返回true；否则返回false
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) CheckCacheImageExistence(uuid string) (bool, error) {
+func (store *PostStore) CheckCacheImageAvaliable(uuid string) (bool, error) {
 	// 检查缓存图片是否存在
-	var cachedPostImage models.CachedPostImage
-	result := store.db.Where("file_name = ?", uuid+".webp").First(&cachedPostImage)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+	ctx := context.Background()
+
+	var sb strings.Builder
+	sb.WriteString(consts.CACHE_IMAGE_LIST)
+	sb.WriteString(":")
+	sb.WriteString(uuid)
+
+	// 遍历缓存列表
+	flag := false
+	keys, err := store.rds.Keys(ctx, consts.CACHE_IMAGE_LIST+":*").Result()
+	if err != nil {
+		return false, err
+	}
+	for _, key := range keys {
+		if store.rds.HGet(ctx, key, "filename").Val() == uuid+".webp" {
+			// 如果存在则检测是否过期
+			expire, err := store.rds.HGet(ctx, key, "expire").Int64()
+			if err != nil {
+				return false, err
+			}
+			// 返回过期
+			if time.Now().Unix() > expire {
+				return false, nil
+			}
+			flag = true
+			break
+		}
+	}
+	// 不存在
+	if !flag {
 		return false, nil
 	}
-	if result.Error != nil {
-		return false, result.Error
-	}
 
-	_, err := os.Stat(filepath.Join(consts.POST_IMAGE_CACHE_PATH, cachedPostImage.FileName))
+	_, err = os.Stat(filepath.Join(consts.POST_IMAGE_CACHE_PATH, uuid+".webp"))
+	// 文件不存在
 	if os.IsNotExist(err) {
-		store.db.Unscoped().Delete(&cachedPostImage)
+		// 删除缓存记录
+		tx := store.rds.TxPipeline()
+		var sb strings.Builder
+		sb.WriteString(consts.CACHE_IMAGE_LIST)
+		sb.WriteString(":")
+		sb.WriteString(uuid)
+		_, err = tx.Del(ctx, sb.String()).Result()
+		if err != nil {
+			tx.Discard()
+			return false, err
+		}
+		_, err = tx.Exec(ctx)
+		if err != nil {
+			tx.Discard()
+			return false, err
+		}
 		return false, nil
 	}
 	if err != nil {
@@ -248,17 +323,26 @@ func (store *PostStore) CheckCacheImageExistence(uuid string) (bool, error) {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) LikePost(uid, postID int64) error {
+func (store *PostStore) LikePost(uid, postID int64, userStore *UserStore) error {
+	tx := store.db.Begin()
 	// 更新博文点赞记录
-	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_append(\"like\", ?)", uid))
+	result := tx.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_append(\"like\", ?)", uid))
 	if result.Error != nil {
+		tx.Rollback()
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
+		tx.Rollback()
 		return errors.New("user has liked this post")
 	}
 
-	return nil
+	// 更新用户点赞记录
+	err := userStore.AddUserLikedRecord(uid, postID, tx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 // CancelLikePost 取消点赞博文
@@ -269,17 +353,26 @@ func (store *PostStore) LikePost(uid, postID int64) error {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) CancelLikePost(uid, postID int64) error {
+func (store *PostStore) CancelLikePost(uid, postID int64, userStore *UserStore) error {
+	tx := store.db.Begin()
 	// 更新博文点赞记录
-	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
+	result := tx.Model(&models.PostInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
 	if result.Error != nil {
+		tx.Rollback()
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
+		tx.Rollback()
 		return errors.New("user has not liked this post")
 	}
 
-	return nil
+	// 更新用户点赞记录
+	err := userStore.RemoveUserLikedRecord(uid, postID, tx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 // FavouritePost 收藏博文
@@ -290,9 +383,10 @@ func (store *PostStore) CancelLikePost(uid, postID int64) error {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) FavouritePost(uid, postID int64) error {
+func (store *PostStore) FavouritePost(uid, postID int64, userStore *UserStore) error {
+	tx := store.db.Begin()
 	// 更新博文收藏记录
-	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).Update("favourite", gorm.Expr("array_append(\"favourite\", ?)", uid))
+	result := tx.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).Update("favourite", gorm.Expr("array_append(\"favourite\", ?)", uid))
 	if result.Error != nil {
 		return result.Error
 	}
@@ -300,7 +394,13 @@ func (store *PostStore) FavouritePost(uid, postID int64) error {
 		return errors.New("user has favourite this post")
 	}
 
-	return nil
+	// 更新用户收藏记录
+	err := userStore.AddUserFavoriteRecord(uid, postID, tx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 // CancelFavouritePost 取消收藏博文
@@ -311,9 +411,13 @@ func (store *PostStore) FavouritePost(uid, postID int64) error {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) CancelFavouritePost(uid, postID int64) error {
+func (store *PostStore) CancelFavouritePost(uid, postID int64, userStore *UserStore) error {
+	tx := store.db.Begin()
 	// 更新博文收藏记录
-	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).Update("favourite", gorm.Expr("array_remove(\"favourite\", ?)", uid))
+	result := tx.Model(&models.PostInfo{}).
+		Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).
+		Update("favourite", gorm.Expr("array_remove(\"favourite\", ?)", uid))
+
 	if result.Error != nil {
 		return result.Error
 	}
@@ -321,7 +425,13 @@ func (store *PostStore) CancelFavouritePost(uid, postID int64) error {
 		return errors.New("user has not favourite this post")
 	}
 
-	return nil
+	// 更新用户收藏记录
+	err := userStore.RemoveUserFavoriteRecord(uid, postID, tx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 // GetPostUserStatus 获取用户对帖子的状态

@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -39,8 +40,8 @@ func (store *CommentStore) CreateComment(uid uint64, username string, postID uin
 		Username: username,
 		Content:  content,
 		UID:      uid,
-		Like:     nil,
-		Dislike:  nil,
+		Like:     pq.Int64Array{},
+		Dislike:  pq.Int64Array{},
 		IsPublic: true,
 	}
 
