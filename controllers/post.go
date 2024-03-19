@@ -243,6 +243,11 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 
 		// 校验文件数量
 		files := form.File["file"]
+		if len(files) < 1 {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "image is required"),
+			)
+		}
 		if len(files) > 1 {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, "the number of image cannot exceed 1"),
@@ -268,7 +273,7 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：新的博文点赞函数
-func (controller *PostController) NewLikePostHandler() fiber.Handler {
+func (controller *PostController) NewLikePostHandler(userStore *stores.UserStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -288,7 +293,7 @@ func (controller *PostController) NewLikePostHandler() fiber.Handler {
 		}
 
 		// 执行点赞操作
-		if err := controller.postService.LikePost(int64(claims.UID), int64(postIDUint)); err != nil {
+		if err := controller.postService.LikePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 
@@ -300,7 +305,7 @@ func (controller *PostController) NewLikePostHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：新的取消点赞函数
-func (controller *PostController) NewCancelLikePostHandler() fiber.Handler {
+func (controller *PostController) NewCancelLikePostHandler(userStore *stores.UserStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -320,7 +325,7 @@ func (controller *PostController) NewCancelLikePostHandler() fiber.Handler {
 		}
 
 		// 执行取消点赞操作
-		if err := controller.postService.CancelLikePost(int64(claims.UID), int64(postIDUint)); err != nil {
+		if err := controller.postService.CancelLikePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 
@@ -332,7 +337,7 @@ func (controller *PostController) NewCancelLikePostHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：新的收藏博文函数
-func (controller *PostController) NewFavouritePostHandler() fiber.Handler {
+func (controller *PostController) NewFavouritePostHandler(userStore *stores.UserStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -352,7 +357,7 @@ func (controller *PostController) NewFavouritePostHandler() fiber.Handler {
 		}
 
 		// 执行收藏操作
-		if err := controller.postService.FavouritePost(int64(claims.UID), int64(postIDUint)); err != nil {
+		if err := controller.postService.FavouritePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 
@@ -364,7 +369,7 @@ func (controller *PostController) NewFavouritePostHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：新的取消收藏博文函数
-func (controller *PostController) NewCancelFavouritePostHandler() fiber.Handler {
+func (controller *PostController) NewCancelFavouritePostHandler(userStore *stores.UserStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -384,7 +389,7 @@ func (controller *PostController) NewCancelFavouritePostHandler() fiber.Handler 
 		}
 
 		// 执行取消收藏操作
-		if err := controller.postService.CancelFavouritePost(int64(claims.UID), int64(postIDUint)); err != nil {
+		if err := controller.postService.CancelFavouritePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 

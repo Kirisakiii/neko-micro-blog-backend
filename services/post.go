@@ -105,9 +105,9 @@ func (service *PostService) GetPostInfo(postID uint64) (models.PostInfo, error) 
 // 返回值：
 //   - error：如果在创建过程中发生错误，则返回相应的错误信息，否则返回nil。
 func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo types.PostCreateBody) (models.PostInfo, error) {
-	// 校验图片是否存在
+	// 校验图片是否可用
 	for _, image := range postReqInfo.Images {
-		existence, err := service.postStore.CheckCacheImageExistence(image)
+		existence, err := service.postStore.CheckCacheImageAvaliable(image)
 		if err != nil {
 			return models.PostInfo{}, err
 		}
@@ -159,7 +159,7 @@ func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (st
 	}
 
 	// 保存在暂存区并返回UUID
-	return service.postStore.CachePostIamge(convertedImage)
+	return service.postStore.CachePostImage(convertedImage)
 }
 
 // LikePost 点赞博文
@@ -169,9 +169,9 @@ func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (st
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) LikePost(uid, postID int64) error {
+func (service *PostService) LikePost(uid, postID int64, userStore *stores.UserStore) error {
 	// 调用post存储中的点赞方法
-	return service.postStore.LikePost(uid, postID)
+	return service.postStore.LikePost(uid, postID, userStore)
 }
 
 // CancelLikePost 取消点赞博文
@@ -182,9 +182,9 @@ func (service *PostService) LikePost(uid, postID int64) error {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) CancelLikePost(uid, postID int64) error {
+func (service *PostService) CancelLikePost(uid, postID int64, userStore *stores.UserStore) error {
 	// 调用post存储中的取消点赞方法
-	return service.postStore.CancelLikePost(uid, postID)
+	return service.postStore.CancelLikePost(uid, postID, userStore)
 }
 
 // FavouritePost 收藏博文
@@ -195,9 +195,9 @@ func (service *PostService) CancelLikePost(uid, postID int64) error {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) FavouritePost(uid, postID int64) error {
+func (service *PostService) FavouritePost(uid, postID int64, userStore *stores.UserStore) error {
 	// 调用post存储中的收藏方法
-	return service.postStore.FavouritePost(uid, postID)
+	return service.postStore.FavouritePost(uid, postID, userStore)
 }
 
 // CancelFavouritePost 取消收藏博文
@@ -208,9 +208,9 @@ func (service *PostService) FavouritePost(uid, postID int64) error {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) CancelFavouritePost(uid, postID int64) error {
+func (service *PostService) CancelFavouritePost(uid, postID int64, userStore *stores.UserStore) error {
 	// 调用post存储中的取消收藏方法
-	return service.postStore.CancelFavouritePost(uid, postID)
+	return service.postStore.CancelFavouritePost(uid, postID, userStore)
 }
 
 // GetPostUserStatus 获取用户对帖子的状态

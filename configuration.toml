@@ -9,6 +9,13 @@
     password = "114514"
     db_name = "neko"
 
+[redis]
+    host = "localhost"
+    username = ""
+    password = ""
+    port = 6379
+    db = 0
+
 [compress]
 # LevelDisabled (-1): Compression is disabled.
 # LevelDefault (0): Default compression level.

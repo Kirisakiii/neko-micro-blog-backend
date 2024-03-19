@@ -37,6 +37,20 @@ type Config struct {
 		DBName string `toml:"db_name"`
 	} `toml:"database"`
 
+	// Redis设置
+	Redis struct {
+		// Redis主机地址
+		Host string `toml:"host"`
+		// Redis端口
+		Port int `toml:"port"`
+		// Redis用户名
+		Username string `toml:"username"`
+		// Redis密码
+		Password string `toml:"password"`
+		// Redis数据库索引
+		DB int `toml:"db"`
+	} `toml:"redis"`
+
 	// 压缩设置
 	Compress struct {
 		// 压缩等级
