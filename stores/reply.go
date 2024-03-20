@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -27,27 +28,26 @@ func (factory *Factory) NewReplyStore() *ReplyStore {
 	return &ReplyStore{factory.db}
 }
 
-// Createreply 存储reply
+// CreateReply 创建回复
 //
-// 参数 ：
-//   - uid：用户id,
-//   - username: 用户名，
-//   - commentID: 评论id，
-//   - replyToReplyID: 回复id，
-//   - content: 评论内容，
+// 参数：
+//   - uid：用户ID
+//   - commentID: 评论编号
+//   - parentReplyID: 回复编号
+//   - parentReplyUID: 回复用户ID
+//   - content: 回复内容
 //
-// 返回：
-//
-//	-error 正确返回nil
-func (store *ReplyStore) CreateReply(uid uint64, username string, commentID *uint64, replyToReplyID *uint64, content string) error {
+// 返回值：
+//   - error：创建失败返回创建失败时候的具体信息
+func (store *ReplyStore) CreateReply(uid, commentID uint64, parentReplyID, parentReplyUID *uint64, content string) error {
 	newReply := &models.ReplyInfo{
 		CommentID:      commentID,
-		ReplyToReplyID: replyToReplyID,
-		Username:       username,
+		ParentReplyID:  parentReplyID,
+		ParentReplyUID: parentReplyUID,
 		Content:        content,
 		UID:            uid,
-		Like:           nil,
-		Dislike:        nil,
+		Like:           pq.Int64Array{},
+		Dislike:        pq.Int64Array{},
 		IsPublic:       true,
 	}
 
@@ -55,68 +55,99 @@ func (store *ReplyStore) CreateReply(uid uint64, username string, commentID *uin
 	if result.Error != nil {
 		return result.Error
 	}
+
 	return nil
 }
 
 // ValidateReplyExistence 判断回复是否存在
 //
-//	参数：
-//	- replyToReplyID: 评论ID
+// 参数：
+//   - commentID: 评论ID
+//   - parentReplyID: 回复ID
 //
 // 返回值：
+//   - bool：如果回复存在返回true，不存在返回false
 //   - error：如果回复存在返回true，不存在判断具体的错误类型返回false
-func (store *ReplyStore) ValidateReplyExistence(replyToReplyID uint64) (bool, error) {
+func (store *ReplyStore) ValidateReplyExistence(commentID, parentReplyID uint64) (bool, error) {
+	// 查询回复
 	var reply models.ReplyInfo
-	result := store.db.Where("id = ?", replyToReplyID).First(&reply)
+	result := store.db.Where("id = ? AND comment_id = ?", parentReplyID, commentID).First(&reply)
+
+	// 如果没有找到对应的回复，返回否
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return false, nil
 	}
-	// 返回错误类型
+
+	// 其他错误则直接返回
 	if result.Error != nil {
 		return false, result.Error
 	}
+
+	// 找到了回复
 	return true, nil
 }
 
-
-func (store *ReplyStore) DeleteReply(replyID uint64) error {
-	var replyInfo models.ReplyInfo
-
-	// 查询回复信息
-	if err := store.db.Where("id = ?", replyID).First(&replyInfo).Error; err != nil {
-		return err // 如果没有找到对应的回复，返回错误
+// DeleteReply 删除回复
+//
+// 参数：
+//   - replyID：回复ID
+//
+// 返回值：
+//   - error：删除失败返回错误
+func (store *ReplyStore) DeleteReply(uid, replyID uint64) error {
+	result := store.db.Model(&models.ReplyInfo{}).Where("id = ? AND uid = ?", replyID, uid).Unscoped().Delete(&models.ReplyInfo{})
+	if result.Error != nil {
+		return result.Error
 	}
-
-	// 根据回复类型删除相应记录
-	if *replyInfo.CommentID != 0 {
-		// 如果 CommentID 不为 0，则表示这是一个评论回复
-		return store.db.Where("id = ?", replyID).Unscoped().Delete(&models.ReplyInfo{}).Error
-	} else {
-		// 否则，表示这是一个回复的回复
-		return store.db.Where("reply_id = ?", replyID).Unscoped().Delete(&models.ReplyInfo{}).Error
-	}
+	return nil
 }
-
 
 // UpdateReply 修改回复
 //
-//    参数：
-//    - replyID: 评论ID
-//    - content: 修改内容
+// 参数：
+//   - replyID：回复ID
+//   - content: 回复内容
 //
 // 返回值：
-//   - error：如果回复存在返回true，不存在判断具体的错误类型返回false
-func (store *ReplyStore) UpdateReply(replyID uint64, content string) error {
-    ReplyInfo := new(models.ReplyInfo)
-    result := store.db.Where("id = ?", replyID).First(ReplyInfo)
-    if result.Error != nil {
-        return result.Error
-    }
+//   - error：修改失败返回错误
+func (store *ReplyStore) UpdateReply(uid, replyID uint64, content string) error {
+	result := store.db.Model(&models.ReplyInfo{}).Where("id = ? AND uid = ?", replyID, uid).Update("content", content)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
+}
 
-    ReplyInfo.Content = content
-    result = store.db.Save(ReplyInfo)
-    if result.Error != nil {
-        return result.Error
-    }
-    return nil
+// GetReply 获取回复
+//
+// 参数：
+//   - replyID：回复ID
+//
+// 返回值：
+//   - models.ReplyInfo：回复信息
+//   - error：获取失败返回错误
+func (store *ReplyStore) GetReply(replyID uint64) (models.ReplyInfo, error) {
+	var reply models.ReplyInfo
+	result := store.db.Where("id = ?", replyID).First(&reply)
+	if result.Error != nil {
+		return models.ReplyInfo{}, result.Error
+	}
+	return reply, nil
+}
+
+// GetReplyList 获取回复列表
+//
+// 参数：
+//   - commentID：评论ID
+//
+// 返回值：
+//   - []models.ReplyInfo：回复列表
+//   - error：获取失败返回错误
+func (store *ReplyStore) GetReplyList(commentID uint64) ([]models.ReplyInfo, error) {
+	var replyList []models.ReplyInfo
+	result := store.db.Where("comment_id = ?", commentID).Order("id desc").Find(&replyList)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return replyList, nil
 }

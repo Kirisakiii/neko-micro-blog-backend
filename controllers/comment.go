@@ -61,11 +61,6 @@ func (controller *CommentController) NewCreateCommentHandler(postStore *stores.P
 
 		// 获取Token Claims
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
-		if claims == nil {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.AUTH_ERROR, "bearer token is not avaliable"),
-			)
-		}
 
 		// 调用服务方法创建评论
 		commentID, err := controller.commentService.CreateComment(claims.UID, *reqBody.PostID, reqBody.Content, postStore, userStore)
@@ -86,6 +81,7 @@ func (controller *CommentController) NewCreateCommentHandler(postStore *stores.P
 //
 // 返回：
 //   - 处理的成功和失败
+// TODO: 未完成
 func (controller *CommentController) NewUpdateCommentHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 解析请求体
@@ -105,12 +101,7 @@ func (controller *CommentController) NewUpdateCommentHandler() fiber.Handler {
 		}
 
 		// 获取Token Claims
-		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
-		if claims == nil {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.AUTH_ERROR, "bearer token is not available"),
-			)
-		}
+		// claims := ctx.Locals("claims").(*types.BearerTokenClaims)
 
 		// 调用服务方法修改评论
 		err = controller.commentService.UpdateComment(*reqBody.CommentID, reqBody.Content)

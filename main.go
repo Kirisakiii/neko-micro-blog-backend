@@ -210,11 +210,17 @@ func main() {
 	)) // 创建评论
 
 	//Reply 路由
-	replycontroller := controllerFactory.NewReplyController()
+	replyController := controllerFactory.NewReplyController()
 	reply := api.Group("/reply")
-	reply.Post("/new", authMiddleware.NewMiddleware(), replycontroller.NewCreateReplyHandler(storeFactory.NewCommentStore(), storeFactory.NewUserStore())) // 创建回复
-	reply.Post("/edit", authMiddleware.NewMiddleware(), replycontroller.NewUpdateReplyHandler())                                                           // 修改回复
-	reply.Post("/delete", authMiddleware.NewMiddleware(), replycontroller.DeleteReplyHandler())                                                            // 删除回复
+	reply.Get("/list", replyController.NewGetReplyListHandler())     // 获取回复列表
+	reply.Get("/detail", replyController.NewGetReplyDetailHandler()) // 获取回复详情信息
+	reply.Post("/new", authMiddleware.NewMiddleware(), replyController.NewCreateReplyHandler(
+		storeFactory.NewCommentStore(),
+		storeFactory.NewUserStore()),
+	) // 创建回复
+	reply.Post("/edit", authMiddleware.NewMiddleware(), replyController.NewUpdateReplyHandler()) // 修改回复
+	reply.Post("/delete", authMiddleware.NewMiddleware(), replyController.DeleteReplyHandler())  // 删除回复
+
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
 }
