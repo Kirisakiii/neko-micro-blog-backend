@@ -58,18 +58,18 @@ type UserCommentDeleteBody struct {
 
 // ReplyCreateBody 创建回复评论请求体
 type ReplyCreateBody struct {
-	CommentID      *uint64 `json:"comment_id" form:"comment_id"`               // 博文ID
-	ReplyToReplyID *uint64 `json:"reply_to_reply_id" form:"reply_to_reply_id"` // 回复ID
-	Content        string  `json:"content" form:"content"`                     // 内容
+	CommentID     uint64 `json:"comment_id" form:"comment_id"`           // 博文ID
+	ParentReplyID uint64 `json:"parent_reply_id" form:"parent_reply_id"` // 回复ID
+	Content       string `json:"content" form:"content"`                 // 内容
 }
 
 // UserCommentUpdateBody 更新评论请求体
 type UserReplyUpdateBody struct {
-	ReplyID *uint64 `json:"reply_id" form:"reply_id"` // 回复ID
-	Content string  `json:"content" form:"content"`   // 内容
+	ReplyID uint64 `json:"reply_id" form:"reply_id"` // 回复ID
+	Content string `json:"content" form:"content"`   // 内容
 }
 
 // UserReplyDeleteBody 删除博文请求体
 type UserReplyDeleteBody struct {
-	ReplyID *uint64 `json:"reply_id" form:"reply_id"` // 回复ID
+	ReplyID uint64 `json:"reply_id" form:"reply_id"` // 回复ID
 }

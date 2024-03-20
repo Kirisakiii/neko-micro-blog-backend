@@ -10,6 +10,7 @@ package services
 import (
 	"errors"
 
+	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 )
 
@@ -40,35 +41,40 @@ func (factory *Factory) NewReplyService() *ReplyService {
 // 返回值：
 //
 //	-error 创建失败返回创建失败时候的具体信息
-func (service *ReplyService) CreateReply(uid uint64, commentID *uint64, replyToReplyID *uint64, content string, commentStore *stores.CommentStore, userStore *stores.UserStore) error {
-
+func (service *ReplyService) CreateReply(uid, commentID, parentReplyID uint64, content string, commentStore *stores.CommentStore, userStore *stores.UserStore) error {
 	// 校验评论是否存在
-	if *commentID == 0 && *replyToReplyID != 0 {
-		exist, err := service.replyStore.ValidateReplyExistence(*replyToReplyID)
-		if err != nil {
-			return err
-		}
-		if !exist {
-			return errors.New("comment does not exist")
-		}
-	} else if *replyToReplyID == 0 && *commentID != 0 {
-		exist, err := commentStore.ValidateCommentExistence(*commentID)
-		if err != nil {
-			return err
-		}
-		if !exist {
-			return errors.New("reply to comment does not exist")
-		}
-	}
-
-	// 根据 UID 获取 Username
-	user, err := userStore.GetUserByUID(uid)
+	isExist, err := commentStore.ValidateCommentExistence(commentID)
 	if err != nil {
 		return err
 	}
+	if !isExist {
+		return errors.New("comment does not exist")
+	}
+
+	var parentReplyUIDField *uint64 = nil
+	// 校验回复是否存在
+	if parentReplyID != 0 {
+		isExist, err := service.replyStore.ValidateReplyExistence(commentID, parentReplyID)
+		if err != nil {
+			return err
+		}
+		if !isExist {
+			return errors.New("reply does not exist")
+		}
+		parentReplyInfo, err := service.replyStore.GetReply(parentReplyID)
+		if err != nil {
+			return err
+		}
+		parentReplyUIDField = &parentReplyInfo.UID
+	}
+
+	var parentReplyIDField *uint64 = nil
+	if parentReplyID != 0 {
+		parentReplyIDField = &parentReplyID
+	}
 
 	// 调用存储层的方法存储评论
-	err = service.replyStore.CreateReply(uid, user.UserName, commentID, replyToReplyID, content)
+	err = service.replyStore.CreateReply(uid, commentID, parentReplyIDField, parentReplyUIDField, content)
 	if err != nil {
 		return err
 	}
@@ -81,19 +87,10 @@ func (service *ReplyService) CreateReply(uid uint64, commentID *uint64, replyToR
 //   - replyID：评论ID
 //
 // 返回值：
-//
-//	-error 如果评论存在返回修改回复时候的信息
-func (service *ReplyService) DeleteReply(replyID uint64) error {
-	// TODO: 改为控制器层判断
-	exists, err := service.replyStore.ValidateReplyExistence(replyID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return errors.New("comment does not exist")
-	}
+//   - error 如果评论存在返回修改回复时候的信息
+func (service *ReplyService) DeleteReply(uid, replyID uint64) error {
 	// 调用评论存储中的删除回复方法
-	err = service.replyStore.DeleteReply(replyID)
+	err := service.replyStore.DeleteReply(uid, replyID)
 	if err != nil {
 		// 如果发生错误，则返回错误
 		return err
@@ -111,24 +108,56 @@ func (service *ReplyService) DeleteReply(replyID uint64) error {
 //
 // 返回值：
 //
-//    -error 如果评论存在返回修改回复时候的信息
-func (service *ReplyService) UpdateReply(replyID uint64, content string) error {
-    //检查评论是否存在
-    // TODO: 改为控制器层判断
-    exists, err := service.replyStore.ValidateReplyExistence(replyID)
-    if err != nil {
-        return err
-    }
-    if !exists {
-        return errors.New("comment does not exist")
-    }
+//	-error 如果评论存在返回修改回复时候的信息
+func (service *ReplyService) UpdateReply(uid, replyID uint64, content string) error {
+	// 调用数据库或其他存储方法更新评论内容
+	err := service.replyStore.UpdateReply(uid, replyID, content)
+	if err != nil {
+		return err
+	}
 
-    // 调用数据库或其他存储方法更新评论内容
-    err = service.replyStore.UpdateReply(replyID, content)
-    if err != nil {
-        return err
-    }
+	// 如果更新成功，返回nil
+	return nil
+}
 
-    // 如果更新成功，返回nil
-    return nil
+// GetReplyList 获取回复列表
+//
+// 参数：
+//   - commentID：评论ID
+//
+// 返回值：
+//   - []uint64：回复列表
+//   - error：获取失败返回错误
+func (service *ReplyService) GetReplyList(commentID uint64) ([]uint64, error) {
+	// 调用数据库或其他存储方法获取评论列表
+	replyList, err := service.replyStore.GetReplyList(commentID)
+	if err != nil {
+		return nil, err
+	}
+	replyListUint64 := make([]uint64, len(replyList))
+	for index, reply := range replyList {
+		replyListUint64[index] = uint64(reply.ID)
+	}
+
+	// 如果获取成功，返回评论列表
+	return replyListUint64, nil
+}
+
+// GetReplyDetail 获取回复
+//
+// 参数：
+//   - replyID：回复ID
+//
+// 返回值：
+//   - models.ReplyInfo：回复信息
+//   - error：获取失败返回错误
+func (service *ReplyService) GetReplyDetail(replyID uint64) (models.ReplyInfo, error) {
+	// 调用数据库或其他存储方法获取评论
+	reply, err := service.replyStore.GetReply(replyID)
+	if err != nil {
+		return models.ReplyInfo{}, err
+	}
+
+	// 如果获取成功，返回评论
+	return reply, nil
 }
