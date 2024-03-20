@@ -45,5 +45,10 @@ func Migrate(db *gorm.DB) error {
 		return err
 	}
 
+	// Reply 相关
+	if err = db.AutoMigrate(&ReplyInfo{}); err != nil {
+		return err
+	}
+
 	return nil
 }
