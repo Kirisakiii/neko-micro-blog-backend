@@ -50,6 +50,12 @@ type Config struct {
 		// Redis数据库索引
 		DB int `toml:"db"`
 	} `toml:"redis"`
+	
+	// 搜索服务设置
+	SearchService struct {
+		Host string `toml:"host"`
+		Port int    `toml:"port"`
+	} `toml:"search_service"`
 
 	// 压缩设置
 	Compress struct {

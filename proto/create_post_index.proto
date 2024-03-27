@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option go_package = "../;search";
+
+service SearchEngine {
+    rpc CreatePostIndex(CreatePostIndexRequest) returns (CreatePostIndexResponse);
+    rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message CreatePostIndexRequest {
+    int64 id = 1;
+    string title = 2;
+    string content = 3;
+}
+
+message CreatePostIndexResponse {
+    uint64 code = 1;
+}
+
+message SearchRequest {
+    string query = 1;
+}
+
+message SearchResponse {
+    repeated int64 ids = 1;
+}

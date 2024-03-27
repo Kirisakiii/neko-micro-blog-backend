@@ -16,6 +16,10 @@
     port = 6379
     db = 0
 
+[search_service]
+    host = "localhost"
+    port = 5016
+
 [compress]
 # LevelDisabled (-1): Compression is disabled.
 # LevelDefault (0): Default compression level.
@@ -25,4 +29,4 @@
 
 [env]
     # development, production
-    type = "development"
+    type = "production"

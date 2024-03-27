@@ -11,6 +11,11 @@ import (
 	fiberLogger "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
@@ -22,18 +27,22 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/loggers"
 	"github.com/Kirisakiii/neko-micro-blog-backend/middlewares"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
+	search "github.com/Kirisakiii/neko-micro-blog-backend/proto"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 )
 
 var (
-	logger            *logrus.Logger
-	cfg               *configs.Config
-	db                *gorm.DB
-	redisClient       *redis.Client
-	storeFactory      *stores.Factory
-	controllerFactory *controllers.Factory
-	middlewareFactory *middlewares.Factory
+	logger              *logrus.Logger
+	cfg                 *configs.Config
+	db                  *gorm.DB
+	redisClient         *redis.Client
+	mongoClient         *mongo.Client
+	searchSeviceConn    *grpc.ClientConn
+	searchServiceClient search.SearchEngineClient
+	storeFactory        *stores.Factory
+	controllerFactory   *controllers.Factory
+	middlewareFactory   *middlewares.Factory
 )
 
 func init() {
@@ -105,13 +114,33 @@ func init() {
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	_, err = redisClient.Ping(context.Background()).Result()
+	_, err = redisClient.Ping(context.TODO()).Result()
 	if err != nil {
 		logger.Panicln("连接至 Redis 失败：", err.Error())
 	}
+	logger.Debugln("Redis 连接成功")
+
+	// 建立 MongoDB 连接
+	logger.Debugln("正在连接至 MongoDB...")
+	mongoClient, err = mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		logger.Panicln("连接至 MongoDB 失败：", err.Error())
+	}
+	err = mongoClient.Ping(context.TODO(), readpref.Primary())
+	if err != nil {
+		logger.Panicln("连接至 MongoDB 失败：", err.Error())
+	}
+	logger.Debugln("MongoDB 连接成功")
+
+	// 建立搜索服务 gRPC 连接
+	searchSeviceConn, err = grpc.Dial(fmt.Sprintf("%s:%d", cfg.SearchService.Host, cfg.SearchService.Port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		logger.Panicln("连接至搜索服务失败：", err.Error())
+	}
+	searchServiceClient = search.NewSearchEngineClient(searchSeviceConn)
 
 	// 建立数据访问层工厂
-	storeFactory = stores.NewFactory(db, redisClient)
+	storeFactory = stores.NewFactory(db, redisClient, mongoClient,  searchServiceClient)
 
 	// 建立控制器层工厂
 	controllerFactory = controllers.NewFactory(
@@ -179,18 +208,18 @@ func main() {
 	user.Post("/edit", authMiddleware.NewMiddleware(), userController.NewUpdateProfileHandler())         // 修改用户资料
 
 	// Post 路由
-	postController := controllerFactory.NewPostController()
+	postController := controllerFactory.NewPostController(searchServiceClient)
 	post := api.Group("/post")
-	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                                                         // 获取文章列表
-	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())                                       // 获取用户文章状态
-	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                                                  // 创建文章
-	post.Post("/upload-img", authMiddleware.NewMiddleware(), postController.NewUploadPostImageHandler())                                      // 上传博文图片
-	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler(storeFactory.NewUserStore()))                        // 点赞文章
-	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler(storeFactory.NewUserStore()))           // 取消点赞文章
-	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler(storeFactory.NewUserStore()))              // 收藏文章
-	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler(storeFactory.NewUserStore())) // 取消收藏文章
-	post.Get("/:post", postController.NewPostDetailHandler())                                                                                 // 获取文章信息
-	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())                                              // 删除文章
+	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                              // 获取文章列表
+	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())            // 获取用户文章状态
+	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                       // 创建文章
+	post.Post("/upload-img", authMiddleware.NewMiddleware(), postController.NewUploadPostImageHandler())           // 上传博文图片
+	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler())                        // 点赞文章
+	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler())           // 取消点赞文章
+	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler())              // 收藏文章
+	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler()) // 取消收藏文章
+	post.Get("/:post", postController.NewPostDetailHandler())                                                      // 获取文章信息
+	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())                   // 删除文章
 
 	// Comment 路由
 	commentController := controllerFactory.NewCommentController()
@@ -209,7 +238,7 @@ func main() {
 		storeFactory.NewUserStore(),
 	)) // 创建评论
 
-	//Reply 路由
+	// Reply 路由
 	replyController := controllerFactory.NewReplyController()
 	reply := api.Group("/reply")
 	reply.Get("/list", replyController.NewGetReplyListHandler())     // 获取回复列表
@@ -220,6 +249,11 @@ func main() {
 	) // 创建回复
 	reply.Post("/edit", authMiddleware.NewMiddleware(), replyController.NewUpdateReplyHandler()) // 修改回复
 	reply.Post("/delete", authMiddleware.NewMiddleware(), replyController.DeleteReplyHandler())  // 删除回复
+
+	// Search 路由
+	searchController := controllerFactory.NewSearchController(searchServiceClient)
+	search := api.Group("/search")
+	search.Get("/post", searchController.NewSearchPostHandler()) // 搜索文章
 
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
