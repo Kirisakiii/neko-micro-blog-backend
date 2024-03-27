@@ -8,23 +8,33 @@ Copyright (c) [2024], Author(s):
 package stores
 
 import (
+	"context"
 	"errors"
-	"slices"
+	"time"
 
+	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
+	"github.com/lib/pq"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
 )
 
 // Comment 评论信息数据库
 type CommentStore struct {
-	db *gorm.DB
+	db    *gorm.DB
+	mongo *mongo.Client
 }
 
 // NewCommentStore 返回一个新的用户存储实例。
 // 返回：
 //   - *CommentStore: 返回一个指向新的用户存储实例的指针。
 func (factory *Factory) NewCommentStore() *CommentStore {
-	return &CommentStore{factory.db}
+	return &CommentStore{
+		factory.db,
+		factory.mongo,
+	}
 }
 
 // NewCommentStore 存储comment
@@ -40,8 +50,8 @@ func (store *CommentStore) CreateComment(uid uint64, username string, postID uin
 		Username: username,
 		Content:  content,
 		UID:      uid,
-		Like:     nil,
-		Dislike:  nil,
+		Like:     pq.Int64Array{},
+		Dislike:  pq.Int64Array{},
 		IsPublic: true,
 	}
 
@@ -128,10 +138,27 @@ func (store *CommentStore) GetCommentList(postID uint64) ([]models.CommentInfo, 
 // 返回值：
 //   - models.CommentInfo：成功返回评论信息
 //   - error：失败返回error
-func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo, error) {
+func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo, int64, error) {
 	comment := models.CommentInfo{}
 	result := store.db.Where("id = ?", commentID).First(&comment)
-	return comment, result.Error
+	if result.Error != nil {
+		return comment, 0, result.Error
+	}
+
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "like"},
+	}
+	ctx := context.Background()
+	defer ctx.Done()
+
+	likeCount, err := commentRateCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return comment, 0, err
+	}
+
+	return comment, likeCount, nil
 }
 
 // GetCommentUserStatus 获取评论用户状态
@@ -143,20 +170,29 @@ func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo,
 // 返回值：
 //   - bool：返回用户状态
 func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bool, error) {
-	userLikedRecord := models.UserLikedRecord{}
-	result := store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return false, false, result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "like"},
 	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return false, false, result.Error
-	}
+	ctx := context.Background()
+	defer ctx.Done()
 
-	liked := slices.Index(userLikedRecord.LikedComment, int64(commentID)) != -1
-	disliked := slices.Index(userDislikeRecord.DislikeComment, int64(commentID)) != -1
-	return liked, disliked, nil
+	count, err := commentRateCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return false, false, err
+	}
+	isLiked := count > 0
+
+	filter[2].Value = "dislike"
+	count, err = commentRateCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return false, false, err
+	}
+	isDisliked := count > 0
+
+	return isLiked, isDisliked, nil
 }
 
 // LikeComment 点赞评论
@@ -168,50 +204,24 @@ func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bo
 // 返回值：
 //   - error：返回点赞处理的成功与否
 func (store *CommentStore) LikeComment(uid, commentID uint64) error {
-	// 获取评论信息
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
-	if result.Error != nil {
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
 	}
-	userLikedRecord := models.UserLikedRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
+	update := bson.D{
+		{
+			Key: "$set",
+			Value: bson.D{
+				{Key: "rate", Value: "like"},
+				{Key: "rated_at", Value: time.Now()},
+			},
+		},
 	}
 
-	// 如果点踩列中存在 则先移除点踩记录
-	index := slices.Index(userDislikeRecord.DislikeComment, int64(commentID))
-	if index != -1 {
-		userDislikeRecord.DislikeComment = slices.Delete(userDislikeRecord.DislikeComment, index, index+1)
-		result = store.db.Save(&userDislikeRecord)
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	if index := slices.Index(commentInfo.Dislike, int64(uid)); index != -1 {
-		commentInfo.Dislike = slices.Delete(commentInfo.Dislike, index, index+1)
-	}
+	_, err := commentRateCollection.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
 
-	// 如果已经点赞过了
-	if index := slices.Index(userLikedRecord.LikedComment, int64(uid)); index != -1 {
-		return errors.New("you have liked this comment")
-	}
-
-	commentInfo.Like = append(commentInfo.Like, int64(uid))
-	result = store.db.Save(&commentInfo)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	userLikedRecord.LikedComment = append(userLikedRecord.LikedComment, int64(commentID))
-	result = store.db.Save(&userLikedRecord)
-	return result.Error
+	return err
 }
 
 // CancelLikeComment 取消点赞评论
@@ -223,35 +233,18 @@ func (store *CommentStore) LikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回取消点赞处理的成功与否
 func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
-	if result.Error != nil {
-		return result.Error
-	}
-	userLikedRecord := models.UserLikedRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "like"},
 	}
 
-	index := slices.Index(userLikedRecord.LikedComment, int64(commentID))
-	// 如果没有点赞过
-	if index == -1 {
-		return errors.New("you have not liked this comment")
+	result, err := commentRateCollection.DeleteOne(context.Background(), filter)
+	if result.DeletedCount == 0 {
+		return errors.New("user has not liked this comment")
 	}
-	userLikedRecord.LikedComment = slices.Delete(userLikedRecord.LikedComment, index, index+1)
-	result = store.db.Save(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	index = slices.Index(commentInfo.Like, int64(uid))
-	if index != -1 {
-		commentInfo.Like = slices.Delete(commentInfo.Like, index, index+1)
-		result = store.db.Save(&commentInfo)
-	}
-
-	return result.Error
+	return err
 }
 
 // DislikeComment 点踩评论
@@ -263,49 +256,24 @@ func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回点踩处理的成功与否
 func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
-	if result.Error != nil {
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
 	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-	userLikedRecord := models.UserLikedRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userLikedRecord)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	// 如果点赞列中存在 则先移除点赞记录
-	index := slices.Index(userLikedRecord.LikedComment, int64(commentID))
-	if index != -1 {
-		userLikedRecord.LikedComment = slices.Delete(userLikedRecord.LikedComment, index, index+1)
-		result = store.db.Save(&userLikedRecord)
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	if index := slices.Index(commentInfo.Like, int64(uid)); index != -1 {
-		commentInfo.Like = slices.Delete(commentInfo.Like, index, index+1)
+	update := bson.D{
+		{
+			Key: "$set",
+			Value: bson.D{
+				{Key: "rate", Value: "dislike"},
+				{Key: "rated_at", Value: time.Now()},
+			},
+		},
 	}
 
-	// 如果已经点踩过了
-	if index := slices.Index(userDislikeRecord.DislikeComment, int64(uid)); index != -1 {
-		return errors.New("you have disliked this comment")
-	}
+	_, err := commentRateCollection.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
 
-	commentInfo.Dislike = append(commentInfo.Dislike, int64(uid))
-	result = store.db.Save(&commentInfo)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	userDislikeRecord.DislikeComment = append(userDislikeRecord.DislikeComment, int64(commentID))
-	result = store.db.Save(&userDislikeRecord)
-	return result.Error
+	return err
 }
 
 // CancelDislikeComment 取消点踩评论
@@ -317,33 +285,17 @@ func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回取消点踩处理的成功与否
 func (store *CommentStore) CancelDislikeComment(uid, commentID uint64) error {
-	commentInfo := models.CommentInfo{}
-	result := store.db.Where("id = ?", commentID).First(&commentInfo)
-	if result.Error != nil {
-		return result.Error
-	}
-	userDislikeRecord := models.UserDislikeRecord{}
-	result = store.db.Where("uid = ?", uid).First(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "dislike"},
 	}
 
-	index := slices.Index(userDislikeRecord.DislikeComment, int64(commentID))
-	// 如果没有点踩过
-	if index == -1 {
-		return errors.New("you have not disliked this comment")
-	}
-	userDislikeRecord.DislikeComment = slices.Delete(userDislikeRecord.DislikeComment, index, index+1)
-	result = store.db.Save(&userDislikeRecord)
-	if result.Error != nil {
-		return result.Error
+	result, err := commentRateCollection.DeleteOne(context.Background(), filter)
+	if result.DeletedCount == 0 {
+		return errors.New("user has not disliked this comment")
 	}
 
-	index = slices.Index(commentInfo.Dislike, int64(uid))
-	if index != -1 {
-		commentInfo.Dislike = slices.Delete(commentInfo.Dislike, index, index+1)
-		result = store.db.Save(&commentInfo)
-	}
-
-	return result.Error
+	return err
 }

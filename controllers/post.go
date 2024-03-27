@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
+	search "github.com/Kirisakiii/neko-micro-blog-backend/proto"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
@@ -32,9 +33,9 @@ type PostController struct {
 //
 // 返回值：
 //   - *PostController 博文控制器指针
-func (factory *Factory) NewPostController() *PostController {
+func (factory *Factory) NewPostController(searchServiceClient search.SearchEngineClient) *PostController {
 	return &PostController{
-		postService: factory.serviceFactory.NewPostService(),
+		postService: factory.serviceFactory.NewPostService(searchServiceClient),
 	}
 }
 
@@ -47,6 +48,8 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 		// 获取请求参数
 		reqType := ctx.Query("type")
 		uid := ctx.Query("uid")
+		length := ctx.Query("len")
+		from := ctx.Query("from")
 		if reqType == "user" || reqType == "liked" || reqType == "favourited" {
 			_, err := strconv.ParseUint(uid, 10, 64)
 			if err != nil {
@@ -55,24 +58,40 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 				)
 			}
 		}
+		if length != "" {
+			_, err := strconv.ParseUint(length, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid length"),
+				)
+			}
+		}
+		if from != "" {
+			_, err := strconv.ParseUint(from, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid from id"),
+				)
+			}
+		}
 
 		// 获取帖子列表
 		var (
-			posts []uint64
+			posts []int64
 			err   error
 		)
 		switch reqType {
 		case "":
-			posts, err = controller.postService.GetPostList("all", "", userStore)
+			posts, err = controller.postService.GetPostList("all", "", length, from, userStore)
 		case "all":
-			posts, err = controller.postService.GetPostList("all", "", userStore)
+			posts, err = controller.postService.GetPostList("all", "", length, from, userStore)
 		case "user":
-			posts, err = controller.postService.GetPostList("user", uid, userStore)
+			posts, err = controller.postService.GetPostList("user", uid, length, from, userStore)
 		case "liked":
-			posts, err = controller.postService.GetPostList("liked", uid, userStore)
+			posts, err = controller.postService.GetPostList("liked", uid, length, from, userStore)
 			posts = functools.Reverse(posts)
 		case "favourited":
-			posts, err = controller.postService.GetPostList("favourited", uid, userStore)
+			posts, err = controller.postService.GetPostList("favourited", uid, length, from, userStore)
 			posts = functools.Reverse(posts)
 		default:
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "invalid type"))
@@ -113,7 +132,7 @@ func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 		}
 
 		// 获取帖子的详细信息
-		post, err := controller.postService.GetPostInfo(postID)
+		post, likeCount, favouriteCount, err := controller.postService.GetPostInfo(postID)
 		// 若post不存在则返回错误
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ctx.Status(200).JSON(
@@ -130,7 +149,7 @@ func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 
 		// 返回结果
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostDetailResponse(post)),
+			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostDetailResponse(post, likeCount, favouriteCount)),
 		)
 	}
 }
@@ -243,6 +262,11 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 
 		// 校验文件数量
 		files := form.File["file"]
+		if len(files) < 1 {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "image is required"),
+			)
+		}
 		if len(files) > 1 {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, "the number of image cannot exceed 1"),

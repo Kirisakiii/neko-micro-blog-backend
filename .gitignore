@@ -1,2 +1,3 @@
 # remove temprary files
 /public/**/*.webp
+/*.exe

@@ -48,35 +48,21 @@ type UserLoginLog struct {
 	BearerToken string    `gorm:"column:bearer_token"`                // 此次登录获取到的令牌
 }
 
-// UserAvaliableToken 用户可用Token模型
-type UserAvaliableToken struct {
-	gorm.Model           // 基本模型
-	UID        uint64    `gorm:"column:uid"`          // 用户ID
-	Username   string    `gorm:"column:username"`     // 用户名
-	Token      string    `gorm:"unique;column:token"` // Token
-	ExpireTime time.Time `gorm:"column:expire_time"`  // 过期时间
+// UserPostStatus 用户帖子状态模型
+type UserPostStatus struct {
+	gorm.Model
+	UID        uint64        `gorm:"column:uid"` // 用户ID
+	Viewed     pq.Int64Array `gorm:"column:viewed;type:bigint[]"`
+	Liked      pq.Int64Array `gorm:"column:liked;type:bigint[]"`
+	Favourited pq.Int64Array `gorm:"column:favourited;type:bigint[]"`
+	Commented  pq.Int64Array `gorm:"column:commented;type:bigint[]"`
 }
 
-// UserLikedRecord 用户点赞记录
-type UserLikedRecord struct {
+// UserCommentStatus 用户帖子信息模型
+type UserCommentStatus struct {
 	gorm.Model
-	UID          uint64        `gorm:"column:uid"`                         // 用户ID
-	LikedPost    pq.Int64Array `gorm:"column:liked_post;type:bigint[]"`    // 点赞过的博文
-	LikedComment pq.Int64Array `gorm:"column:liked_comment;type:bigint[]"` // 点赞过的评论
-	LikedReply   pq.Int64Array `gorm:"column:liked_reply;type:bigint[]"`   // 点赞过的回复
-}
-
-// UserDislikeRecord 用户点踩记录
-type UserDislikeRecord struct {
-	gorm.Model
-	UID            uint64        `gorm:"column:uid"`                           // 用户ID
-	DislikeComment pq.Int64Array `gorm:"column:dislike_comment;type:bigint[]"` // 点踩过的评论
-	DislikeReply   pq.Int64Array `gorm:"column:dislike_reply;type:bigint[]"`   // 点踩过的回复
-}
-
-// UserFavouriteRecord 用户收藏记录
-type UserFavouriteRecord struct {
-	gorm.Model
-	UID       uint64        `gorm:"column:uid"`                     // 用户ID
-	Favourite pq.Int64Array `gorm:"column:favourite;type:bigint[]"` // 收藏过的博文
+	UID       uint64        `gorm:"column:uid"` // 用户ID
+	Commented pq.Int64Array `gorm:"column:commented;type:bigint[]"`
+	Liked     pq.Int64Array `gorm:"column:liked;type:bigint[]"`
+	Disliked  pq.Int64Array `gorm:"column:disliked;type:bigint[]"`
 }

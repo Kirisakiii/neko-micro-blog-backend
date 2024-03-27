@@ -135,14 +135,14 @@ func (service *CommentService) GetCommentList(postID uint64) ([]models.CommentIn
 // 返回值：
 //   - 成功返回评论体
 //   - 失败返回nil
-func (service *CommentService) GetCommentInfo(commentID uint64) (models.CommentInfo, error) {
+func (service *CommentService) GetCommentInfo(commentID uint64) (models.CommentInfo, int64, error) {
 	// 检查评论是否存在
 	exists, err := service.commentStore.ValidateCommentExistence(commentID)
 	if err != nil {
-		return models.CommentInfo{}, err
+		return models.CommentInfo{}, 0, err
 	}
 	if !exists {
-		return models.CommentInfo{}, errors.New("comment does not exist")
+		return models.CommentInfo{}, 0, errors.New("comment does not exist")
 	}
 
 	return service.commentStore.GetCommentInfo(commentID)

@@ -17,13 +17,6 @@ import "gorm.io/gorm"
 //	- error 错误
 func Migrate(db *gorm.DB) error {
 	var err error
-	// cron 相关
-	if err = db.AutoMigrate(&DeletedAvatar{}); err != nil {
-		return err
-	}
-	if err = db.AutoMigrate(&DeletedCachedImage{}); err != nil {
-		return err
-	}
 
 	// User 相关
 	if err = db.AutoMigrate(&UserInfo{}); err != nil {
@@ -35,16 +28,10 @@ func Migrate(db *gorm.DB) error {
 	if err = db.AutoMigrate(&UserLoginLog{}); err != nil {
 		return err
 	}
-	if err = db.AutoMigrate(&UserAvaliableToken{}); err != nil {
+	if err = db.AutoMigrate(&UserPostStatus{}); err != nil {
 		return err
 	}
-	if err = db.AutoMigrate(&UserLikedRecord{}); err != nil {
-		return err
-	}
-	if err = db.AutoMigrate(&UserDislikeRecord{}); err != nil {
-		return err
-	}
-	if err = db.AutoMigrate(&UserFavouriteRecord{}); err != nil {
+	if err = db.AutoMigrate(&UserCommentStatus{}); err != nil {
 		return err
 	}
 
@@ -52,12 +39,14 @@ func Migrate(db *gorm.DB) error {
 	if err = db.AutoMigrate(&PostInfo{}); err != nil {
 		return err
 	}
-	if err = db.AutoMigrate(&CachedPostImage{}); err != nil {
+	
+	// Comment 相关
+	if err = db.AutoMigrate(&CommentInfo{}); err != nil {
 		return err
 	}
 
-	// Comment 相关
-	if err = db.AutoMigrate(&CommentInfo{}); err != nil {
+	// Reply 相关
+	if err = db.AutoMigrate(&ReplyInfo{}); err != nil {
 		return err
 	}
 

@@ -61,11 +61,6 @@ func (controller *CommentController) NewCreateCommentHandler(postStore *stores.P
 
 		// 获取Token Claims
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
-		if claims == nil {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.AUTH_ERROR, "bearer token is not avaliable"),
-			)
-		}
 
 		// 调用服务方法创建评论
 		commentID, err := controller.commentService.CreateComment(claims.UID, *reqBody.PostID, reqBody.Content, postStore, userStore)
@@ -86,6 +81,8 @@ func (controller *CommentController) NewCreateCommentHandler(postStore *stores.P
 //
 // 返回：
 //   - 处理的成功和失败
+//
+// TODO: 未完成
 func (controller *CommentController) NewUpdateCommentHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 解析请求体
@@ -105,12 +102,7 @@ func (controller *CommentController) NewUpdateCommentHandler() fiber.Handler {
 		}
 
 		// 获取Token Claims
-		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
-		if claims == nil {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.AUTH_ERROR, "bearer token is not available"),
-			)
-		}
+		// claims := ctx.Locals("claims").(*types.BearerTokenClaims)
 
 		// 调用服务方法修改评论
 		err = controller.commentService.UpdateComment(*reqBody.CommentID, reqBody.Content)
@@ -213,7 +205,7 @@ func (controller *CommentController) NewCommentDetailHandler() fiber.Handler {
 			)
 		}
 
-		comment, err := controller.commentService.GetCommentInfo(commentID)
+		comment, likeCount, err := controller.commentService.GetCommentInfo(commentID)
 		// 若comment不存在则返回错误
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ctx.Status(200).JSON(
@@ -229,7 +221,7 @@ func (controller *CommentController) NewCommentDetailHandler() fiber.Handler {
 
 		// 返回结果
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewCommentDetailResponse(comment)),
+			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewCommentDetailResponse(comment, likeCount)),
 		)
 	}
 }
@@ -271,7 +263,6 @@ func (controller *CommentController) NewCommentUserStatusHandler() fiber.Handler
 		)
 	}
 }
-
 
 // NewLikeCommentHandler 点赞评论的函数
 //
