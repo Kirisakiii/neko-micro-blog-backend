@@ -5,10 +5,10 @@ import (
 )
 
 type PostListResponse struct {
-	IDs []uint64 `json:"ids"`
+	IDs []int64 `json:"ids"`
 }
 
-func NewPostListResponse(posts []uint64) *PostListResponse {
+func NewPostListResponse(posts []int64) *PostListResponse {
 	return &PostListResponse{IDs: posts}
 }
 
@@ -21,8 +21,8 @@ type PostDetailResponse struct {
 	Content      string   `json:"content"`        // 内容
 	ParentPostID *uint64  `json:"parent_post_id"` // 转发自文章ID
 	Images       []string `json:"images"`         // 图片
-	Like         int      `json:"like"`           // 点赞数
-	Favourite    int      `json:"favourite"`      // 收藏数
+	Like         int64    `json:"like"`           // 点赞数
+	Favourite    int64    `json:"favourite"`      // 收藏数
 	Farward      int      `json:"farward"`        // 转发数
 }
 
@@ -33,7 +33,7 @@ type PostDetailResponse struct {
 //
 // 返回值：
 //   - *PostProfileData：新的文章信息响应结构
-func NewPostDetailResponse(post models.PostInfo) *PostDetailResponse {
+func NewPostDetailResponse(post models.PostInfo, likeCount, favouriteCount int64) *PostDetailResponse {
 	// 创建一个新的 PostProfileData 实例
 	profileData := &PostDetailResponse{
 		CommentID:    uint64(post.ID),
@@ -42,8 +42,8 @@ func NewPostDetailResponse(post models.PostInfo) *PostDetailResponse {
 		Title:        post.Title,
 		Content:      post.Content,
 		ParentPostID: post.ParentPostID,
-		Like:         len(post.Like),
-		Favourite:    len(post.Favourite),
+		Like:         likeCount,
+		Favourite:    favouriteCount,
 		Farward:      len(post.Farward),
 	}
 	for _, image := range post.Images {

@@ -31,14 +31,14 @@ type CommentDetailResponse struct {
 	PosterUID     uint64 `json:"poster_uid"`     // 发布者UID
 	PostTimestamp int64  `json:"post_timestamp"` // 博文发布时间戳
 	Content       string `json:"content"`        // 内容
-	Likes         int    `json:"likes"`          // 点赞数
+	Likes         int64  `json:"likes"`          // 点赞数
 	Replies       int    `json:"replies"`        // 回复数
 	Is_liked      bool   `json:"is_liked"`       // 是否点赞
 	Is_disliked   bool   `json:"is_disliked"`    // 是否点踩
 }
 
 // NewCommentDetailResponse 创建评论实例
-func NewCommentDetailResponse(comment models.CommentInfo) *CommentDetailResponse {
+func NewCommentDetailResponse(comment models.CommentInfo, likeCount int64) *CommentDetailResponse {
 	// 创建一个新的 CommentProfileData 实例
 	profileData := &CommentDetailResponse{
 		CommentID:     uint64(comment.ID),
@@ -46,7 +46,7 @@ func NewCommentDetailResponse(comment models.CommentInfo) *CommentDetailResponse
 		PosterUID:     comment.UID,
 		PostTimestamp: comment.CreatedAt.Unix(),
 		Content:       comment.Content,
-		Likes:         len(comment.Like),
+		Likes:         likeCount,
 	}
 
 	return profileData

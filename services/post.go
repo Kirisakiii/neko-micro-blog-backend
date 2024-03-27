@@ -10,11 +10,14 @@ Copyright (c) [2024], Author(s):
 package services
 
 import (
+	"context"
 	"errors"
 	"mime/multipart"
+	"strconv"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
+	search "github.com/Kirisakiii/neko-micro-blog-backend/proto"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/converters"
@@ -24,16 +27,18 @@ import (
 
 // PostService 博文服务
 type PostService struct {
-	postStore *stores.PostStore
+	postStore           *stores.PostStore
+	searchServiceClient search.SearchEngineClient
 }
 
 // PostService 返回一个新的 PostService 实例
 //
 // 返回值：
 //   - *PostService：新的 PostService 实力。
-func (factory *Factory) NewPostService() *PostService {
+func (factory *Factory) NewPostService(searchServiceClient search.SearchEngineClient) *PostService {
 	return &PostService{
-		postStore: factory.storeFactory.NewPostStore(),
+		postStore:           factory.storeFactory.NewPostStore(),
+		searchServiceClient: searchServiceClient,
 	}
 }
 
@@ -41,30 +46,50 @@ func (factory *Factory) NewPostService() *PostService {
 // 返回值：
 // - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
 // - error: 在获取帖子信息过程中遇到的任何错误，如果有的话。
-func (service *PostService) GetPostList(reqType, uid string, userStore *stores.UserStore) ([]uint64, error) {
+func (service *PostService) GetPostList(reqType, uid, length, from string, userStore *stores.UserStore) ([]int64, error) {
 	var (
 		postInfos  []models.PostInfo
 		userRecord pq.Int64Array
 		err        error
+		uidInt64   int64
 	)
+
+	if reqType != "all" {
+		uidInt64, err = strconv.ParseInt(uid, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	queryLenth := 10
+	if length != "" {
+		queryLenth, err = strconv.Atoi(length)
+		if err != nil {
+			return nil, err
+		}
+		if queryLenth > 10 {
+			queryLenth = 10
+		}
+	}
+
 	switch reqType {
 	case "all":
-		postInfos, err = service.postStore.GetPostList()
+		postInfos, err = service.postStore.GetPostList(from, queryLenth)
 	case "user":
 		postInfos, err = service.postStore.GetPostListByUID(uid)
 	case "liked":
-		userRecord, err = userStore.GetUserLikedRecord(uid)
+		userRecord, err = userStore.GetUserLikedRecord(uidInt64)
 	case "favourited":
-		userRecord, err = userStore.GetUserFavoriteRecord(uid)
+		userRecord, err = userStore.GetUserFavoriteRecord(uidInt64)
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	if reqType == "all" || reqType == "user" {
-		postIDs := make([]uint64, len(postInfos))
+		postIDs := make([]int64, len(postInfos))
 		for index, post := range postInfos {
-			postIDs[index] = uint64(post.ID)
+			postIDs[index] = int64(post.ID)
 		}
 		return postIDs, nil
 	}
@@ -72,9 +97,9 @@ func (service *PostService) GetPostList(reqType, uid string, userStore *stores.U
 	if userRecord == nil {
 		return nil, nil
 	}
-	postIDs := make([]uint64, len(userRecord))
+	postIDs := make([]int64, len(userRecord))
 	for index, id := range userRecord {
-		postIDs[index] = uint64(id)
+		postIDs[index] = int64(id)
 	}
 	return postIDs, nil
 }
@@ -86,12 +111,8 @@ func (service *PostService) GetPostList(reqType, uid string, userStore *stores.U
 //
 // 返回值：
 //   - *models.postInfo：用户信息模型。
-func (service *PostService) GetPostInfo(postID uint64) (models.PostInfo, error) {
-	post, err := service.postStore.GetPostInfo(postID)
-	if err != nil {
-		return models.PostInfo{}, err
-	}
-	return post, nil
+func (service *PostService) GetPostInfo(postID uint64) (models.PostInfo, int64, int64, error) {
+	return service.postStore.GetPostInfo(postID)
 }
 
 // CreatePost 根据用户提交的帖子信息创建帖子。
@@ -121,6 +142,17 @@ func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo ty
 	if err != nil {
 		return models.PostInfo{}, err
 	}
+
+	// 写入搜索引擎索引库
+	_, err = service.searchServiceClient.CreatePostIndex(context.TODO(), &search.CreatePostIndexRequest{
+		Id:      int64(postInfo.ID),
+		Title:   postReqInfo.Title,
+		Content: postReqInfo.Content,
+	})
+	if err != nil {
+		return models.PostInfo{}, err
+	}
+
 	return postInfo, nil
 }
 
@@ -169,9 +201,9 @@ func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (st
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) LikePost(uid, postID int64, userStore *stores.UserStore) error {
+func (service *PostService) LikePost(uid, postID int64) error {
 	// 调用post存储中的点赞方法
-	return service.postStore.LikePost(uid, postID, userStore)
+	return service.postStore.LikePost(uid, postID)
 }
 
 // CancelLikePost 取消点赞博文
@@ -182,9 +214,9 @@ func (service *PostService) LikePost(uid, postID int64, userStore *stores.UserSt
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) CancelLikePost(uid, postID int64, userStore *stores.UserStore) error {
+func (service *PostService) CancelLikePost(uid, postID int64) error {
 	// 调用post存储中的取消点赞方法
-	return service.postStore.CancelLikePost(uid, postID, userStore)
+	return service.postStore.CancelLikePost(uid, postID)
 }
 
 // FavouritePost 收藏博文
@@ -195,9 +227,9 @@ func (service *PostService) CancelLikePost(uid, postID int64, userStore *stores.
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) FavouritePost(uid, postID int64, userStore *stores.UserStore) error {
+func (service *PostService) FavouritePost(uid, postID int64) error {
 	// 调用post存储中的收藏方法
-	return service.postStore.FavouritePost(uid, postID, userStore)
+	return service.postStore.FavouritePost(uid, postID)
 }
 
 // CancelFavouritePost 取消收藏博文
@@ -208,9 +240,9 @@ func (service *PostService) FavouritePost(uid, postID int64, userStore *stores.U
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) CancelFavouritePost(uid, postID int64, userStore *stores.UserStore) error {
+func (service *PostService) CancelFavouritePost(uid, postID int64) error {
 	// 调用post存储中的取消收藏方法
-	return service.postStore.CancelFavouritePost(uid, postID, userStore)
+	return service.postStore.CancelFavouritePost(uid, postID)
 }
 
 // GetPostUserStatus 获取用户对帖子的状态

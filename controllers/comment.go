@@ -81,6 +81,7 @@ func (controller *CommentController) NewCreateCommentHandler(postStore *stores.P
 //
 // 返回：
 //   - 处理的成功和失败
+//
 // TODO: 未完成
 func (controller *CommentController) NewUpdateCommentHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
@@ -204,7 +205,7 @@ func (controller *CommentController) NewCommentDetailHandler() fiber.Handler {
 			)
 		}
 
-		comment, err := controller.commentService.GetCommentInfo(commentID)
+		comment, likeCount, err := controller.commentService.GetCommentInfo(commentID)
 		// 若comment不存在则返回错误
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ctx.Status(200).JSON(
@@ -220,7 +221,7 @@ func (controller *CommentController) NewCommentDetailHandler() fiber.Handler {
 
 		// 返回结果
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewCommentDetailResponse(comment)),
+			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewCommentDetailResponse(comment, likeCount)),
 		)
 	}
 }
@@ -262,7 +263,6 @@ func (controller *CommentController) NewCommentUserStatusHandler() fiber.Handler
 		)
 	}
 }
-
 
 // NewLikeCommentHandler 点赞评论的函数
 //

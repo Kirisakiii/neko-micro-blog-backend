@@ -8,23 +8,33 @@ Copyright (c) [2024], Author(s):
 package stores
 
 import (
+	"context"
 	"errors"
+	"time"
 
+	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/lib/pq"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
 )
 
 // Comment 评论信息数据库
 type CommentStore struct {
-	db *gorm.DB
+	db    *gorm.DB
+	mongo *mongo.Client
 }
 
 // NewCommentStore 返回一个新的用户存储实例。
 // 返回：
 //   - *CommentStore: 返回一个指向新的用户存储实例的指针。
 func (factory *Factory) NewCommentStore() *CommentStore {
-	return &CommentStore{factory.db}
+	return &CommentStore{
+		factory.db,
+		factory.mongo,
+	}
 }
 
 // NewCommentStore 存储comment
@@ -128,10 +138,27 @@ func (store *CommentStore) GetCommentList(postID uint64) ([]models.CommentInfo, 
 // 返回值：
 //   - models.CommentInfo：成功返回评论信息
 //   - error：失败返回error
-func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo, error) {
+func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo, int64, error) {
 	comment := models.CommentInfo{}
 	result := store.db.Where("id = ?", commentID).First(&comment)
-	return comment, result.Error
+	if result.Error != nil {
+		return comment, 0, result.Error
+	}
+
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "like"},
+	}
+	ctx := context.Background()
+	defer ctx.Done()
+
+	likeCount, err := commentRateCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return comment, 0, err
+	}
+
+	return comment, likeCount, nil
 }
 
 // GetCommentUserStatus 获取评论用户状态
@@ -143,16 +170,25 @@ func (store *CommentStore) GetCommentInfo(commentID uint64) (models.CommentInfo,
 // 返回值：
 //   - bool：返回用户状态
 func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bool, error) {
-	var count int64
-	result := store.db.Model(&models.CommentInfo{}).Where("id = ? AND ? = ANY(\"like\")", commentID, uid).Count(&count)
-	if result.Error != nil {
-		return false, false, result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "like"},
+	}
+	ctx := context.Background()
+	defer ctx.Done()
+
+	count, err := commentRateCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return false, false, err
 	}
 	isLiked := count > 0
 
-	result = store.db.Model(&models.CommentInfo{}).Where("id = ? AND ? = ANY(\"dislike\")", commentID, uid).Count(&count)
-	if result.Error != nil {
-		return false, false, result.Error
+	filter[2].Value = "dislike"
+	count, err = commentRateCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return false, false, err
 	}
 	isDisliked := count > 0
 
@@ -168,26 +204,24 @@ func (store *CommentStore) GetCommentUserStatus(uid, commentID uint64) (bool, bo
 // 返回值：
 //   - error：返回点赞处理的成功与否
 func (store *CommentStore) LikeComment(uid, commentID uint64) error {
-	tx := store.db.Begin()
-
-	// 删除点踩记录
-	result := tx.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"dislike\"", commentID, uid).Update("dislike", gorm.Expr("array_remove(\"dislike\", ?)", uid))
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+	}
+	update := bson.D{
+		{
+			Key: "$set",
+			Value: bson.D{
+				{Key: "rate", Value: "like"},
+				{Key: "rated_at", Value: time.Now()},
+			},
+		},
 	}
 
-	// 更新博文点赞记录
-	result = tx.Model(&models.CommentInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ comment_infos.\"like\"", commentID, uid).Update("like", gorm.Expr("array_append(\"like\", ?)", uid))
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return errors.New("user has liked this comment")
-	}
+	_, err := commentRateCollection.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
 
-	return tx.Commit().Error
+	return err
 }
 
 // CancelLikeComment 取消点赞评论
@@ -199,16 +233,18 @@ func (store *CommentStore) LikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回取消点赞处理的成功与否
 func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
-	// 更新博文点赞记录
-	result := store.db.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"like\"", commentID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return errors.New("user has not liked this comment")
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "like"},
 	}
 
-	return nil
+	result, err := commentRateCollection.DeleteOne(context.Background(), filter)
+	if result.DeletedCount == 0 {
+		return errors.New("user has not liked this comment")
+	}
+	return err
 }
 
 // DislikeComment 点踩评论
@@ -220,26 +256,24 @@ func (store *CommentStore) CancelLikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回点踩处理的成功与否
 func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
-	tx := store.db.Begin()
-
-	// 删除点赞记录
-	result := tx.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"like\"", commentID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+	}
+	update := bson.D{
+		{
+			Key: "$set",
+			Value: bson.D{
+				{Key: "rate", Value: "dislike"},
+				{Key: "rated_at", Value: time.Now()},
+			},
+		},
 	}
 
-	// 更新博文点踩记录
-	result = tx.Model(&models.CommentInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ comment_infos.\"dislike\"", commentID, uid).Update("dislike", gorm.Expr("array_append(\"dislike\", ?)", uid))
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return errors.New("user has disliked this comment")
-	}
+	_, err := commentRateCollection.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
 
-	return tx.Commit().Error
+	return err
 }
 
 // CancelDislikeComment 取消点踩评论
@@ -251,14 +285,17 @@ func (store *CommentStore) DislikeComment(uid, commentID uint64) error {
 // 返回值：
 //   - error：返回取消点踩处理的成功与否
 func (store *CommentStore) CancelDislikeComment(uid, commentID uint64) error {
-	// 更新博文点踩记录
-	result := store.db.Model(&models.CommentInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ comment_infos.\"dislike\"", commentID, uid).Update("dislike", gorm.Expr("array_remove(\"dislike\", ?)", uid))
-	if result.Error != nil {
-		return result.Error
+	commentRateCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.COMMENT_RATE_COLLECTION)
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "comment_id", Value: commentID},
+		{Key: "rate", Value: "dislike"},
 	}
-	if result.RowsAffected == 0 {
+
+	result, err := commentRateCollection.DeleteOne(context.Background(), filter)
+	if result.DeletedCount == 0 {
 		return errors.New("user has not disliked this comment")
 	}
 
-	return nil
+	return err
 }

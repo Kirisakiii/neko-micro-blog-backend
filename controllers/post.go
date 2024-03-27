@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
+	search "github.com/Kirisakiii/neko-micro-blog-backend/proto"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
 	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
@@ -32,9 +33,9 @@ type PostController struct {
 //
 // 返回值：
 //   - *PostController 博文控制器指针
-func (factory *Factory) NewPostController() *PostController {
+func (factory *Factory) NewPostController(searchServiceClient search.SearchEngineClient) *PostController {
 	return &PostController{
-		postService: factory.serviceFactory.NewPostService(),
+		postService: factory.serviceFactory.NewPostService(searchServiceClient),
 	}
 }
 
@@ -47,6 +48,8 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 		// 获取请求参数
 		reqType := ctx.Query("type")
 		uid := ctx.Query("uid")
+		length := ctx.Query("len")
+		from := ctx.Query("from")
 		if reqType == "user" || reqType == "liked" || reqType == "favourited" {
 			_, err := strconv.ParseUint(uid, 10, 64)
 			if err != nil {
@@ -55,24 +58,40 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 				)
 			}
 		}
+		if length != "" {
+			_, err := strconv.ParseUint(length, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid length"),
+				)
+			}
+		}
+		if from != "" {
+			_, err := strconv.ParseUint(from, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid from id"),
+				)
+			}
+		}
 
 		// 获取帖子列表
 		var (
-			posts []uint64
+			posts []int64
 			err   error
 		)
 		switch reqType {
 		case "":
-			posts, err = controller.postService.GetPostList("all", "", userStore)
+			posts, err = controller.postService.GetPostList("all", "", length, from, userStore)
 		case "all":
-			posts, err = controller.postService.GetPostList("all", "", userStore)
+			posts, err = controller.postService.GetPostList("all", "", length, from, userStore)
 		case "user":
-			posts, err = controller.postService.GetPostList("user", uid, userStore)
+			posts, err = controller.postService.GetPostList("user", uid, length, from, userStore)
 		case "liked":
-			posts, err = controller.postService.GetPostList("liked", uid, userStore)
+			posts, err = controller.postService.GetPostList("liked", uid, length, from, userStore)
 			posts = functools.Reverse(posts)
 		case "favourited":
-			posts, err = controller.postService.GetPostList("favourited", uid, userStore)
+			posts, err = controller.postService.GetPostList("favourited", uid, length, from, userStore)
 			posts = functools.Reverse(posts)
 		default:
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "invalid type"))
@@ -113,7 +132,7 @@ func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 		}
 
 		// 获取帖子的详细信息
-		post, err := controller.postService.GetPostInfo(postID)
+		post, likeCount, favouriteCount, err := controller.postService.GetPostInfo(postID)
 		// 若post不存在则返回错误
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ctx.Status(200).JSON(
@@ -130,7 +149,7 @@ func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 
 		// 返回结果
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostDetailResponse(post)),
+			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostDetailResponse(post, likeCount, favouriteCount)),
 		)
 	}
 }
@@ -273,7 +292,7 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：新的博文点赞函数
-func (controller *PostController) NewLikePostHandler(userStore *stores.UserStore) fiber.Handler {
+func (controller *PostController) NewLikePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -293,7 +312,7 @@ func (controller *PostController) NewLikePostHandler(userStore *stores.UserStore
 		}
 
 		// 执行点赞操作
-		if err := controller.postService.LikePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
+		if err := controller.postService.LikePost(int64(claims.UID), int64(postIDUint)); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 
@@ -305,7 +324,7 @@ func (controller *PostController) NewLikePostHandler(userStore *stores.UserStore
 //
 // 返回值：
 //   - fiber.Handler：新的取消点赞函数
-func (controller *PostController) NewCancelLikePostHandler(userStore *stores.UserStore) fiber.Handler {
+func (controller *PostController) NewCancelLikePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -325,7 +344,7 @@ func (controller *PostController) NewCancelLikePostHandler(userStore *stores.Use
 		}
 
 		// 执行取消点赞操作
-		if err := controller.postService.CancelLikePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
+		if err := controller.postService.CancelLikePost(int64(claims.UID), int64(postIDUint)); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 
@@ -337,7 +356,7 @@ func (controller *PostController) NewCancelLikePostHandler(userStore *stores.Use
 //
 // 返回值：
 //   - fiber.Handler：新的收藏博文函数
-func (controller *PostController) NewFavouritePostHandler(userStore *stores.UserStore) fiber.Handler {
+func (controller *PostController) NewFavouritePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -357,7 +376,7 @@ func (controller *PostController) NewFavouritePostHandler(userStore *stores.User
 		}
 
 		// 执行收藏操作
-		if err := controller.postService.FavouritePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
+		if err := controller.postService.FavouritePost(int64(claims.UID), int64(postIDUint)); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 
@@ -369,7 +388,7 @@ func (controller *PostController) NewFavouritePostHandler(userStore *stores.User
 //
 // 返回值：
 //   - fiber.Handler：新的取消收藏博文函数
-func (controller *PostController) NewCancelFavouritePostHandler(userStore *stores.UserStore) fiber.Handler {
+func (controller *PostController) NewCancelFavouritePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -389,7 +408,7 @@ func (controller *PostController) NewCancelFavouritePostHandler(userStore *store
 		}
 
 		// 执行取消收藏操作
-		if err := controller.postService.CancelFavouritePost(int64(claims.UID), int64(postIDUint), userStore); err != nil {
+		if err := controller.postService.CancelFavouritePost(int64(claims.UID), int64(postIDUint)); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 

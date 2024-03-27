@@ -10,7 +10,6 @@ package stores
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,20 +18,23 @@ import (
 	"strings"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
-	"github.com/Kirisakiii/neko-micro-blog-backend/utils/functools"
 	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
 
 // UserStore 用户信息数据库
 type UserStore struct {
-	db  *gorm.DB
-	rds *redis.Client
+	db    *gorm.DB
+	rds   *redis.Client
+	mongo *mongo.Client
 }
 
 // NewUserStore 返回一个新的 UserStore 实例。
@@ -40,7 +42,11 @@ type UserStore struct {
 // 返回值：
 //   - *UserStore：新的 UserStore 实例。
 func (factory *Factory) NewUserStore() *UserStore {
-	return &UserStore{factory.db, factory.rds}
+	return &UserStore{
+		factory.db,
+		factory.rds,
+		factory.mongo,
+	}
 }
 
 // RegisterUserByUsername 注册用户将提供的用户名、盐和哈希密码注册到数据库中。
@@ -401,15 +407,33 @@ func (store *UserStore) UpdateUserInfoByUID(uid uint64, updatedProfile *models.U
 //
 // 返回值：
 //   - pq.Int64Array：用户点赞记录。
-func (store *UserStore) GetUserLikedRecord(uid string) ([]int64, error) {
-	userPostStatus := models.UserPostStatus{}
+func (store *UserStore) GetUserLikedRecord(uid int64) ([]int64, error) {
+	postLikeCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_LIKE_COLLECTION)
+	filter := bson.D{{Key: "uid", Value: uid}}
+	sort := bson.D{{Key: "liked_at", Value: 1}}
+	ctx := context.Background()
+	defer ctx.Done()
 
-	result := store.db.Where("uid = ?", uid).First(&userPostStatus)
-	if result.Error != nil {
-		return nil, result.Error
+	cursor, err := postLikeCollection.Find(ctx, filter, options.Find().SetSort(sort))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var postLikes []struct {
+		PostID int64 `bson:"post_id"`
+	}
+	err = cursor.All(ctx, &postLikes)
+	if err != nil {
+		return nil, err
 	}
 
-	return functools.Reverse(userPostStatus.Liked), nil
+	liked := make([]int64, len(postLikes))
+	for index, postLike := range postLikes {
+		liked[index] = postLike.PostID
+	}
+
+	return liked, nil
 }
 
 // GetUserFavoriteRecord 获取用户收藏记录。
@@ -419,137 +443,31 @@ func (store *UserStore) GetUserLikedRecord(uid string) ([]int64, error) {
 //
 // 返回值：
 //   - pq.Int64Array：用户收藏记录。
-func (store *UserStore) GetUserFavoriteRecord(uid string) ([]int64, error) {
-	userPostStatus := models.UserPostStatus{}
+func (store *UserStore) GetUserFavoriteRecord(uid int64) ([]int64, error) {
+	postFavoriteCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_FAVORITE_COLLECTION)
+	filter := bson.D{{Key: "uid", Value: uid}}
+	sort := bson.D{{Key: "favourited_at", Value: 1}}
+	ctx := context.Background()
+	defer ctx.Done()
 
-	result := store.db.Where("uid = ?", uid).First(&userPostStatus)
-	if result.Error != nil {
-		return nil, result.Error
+	cursor, err := postFavoriteCollection.Find(ctx, filter, options.Find().SetSort(sort))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var postFavorites []struct {
+		PostID int64 `bson:"post_id"`
+	}
+	err = cursor.All(ctx, &postFavorites)
+	if err != nil {
+		return nil, err
 	}
 
-	return functools.Reverse(userPostStatus.Favourited), nil
-}
-
-// AddUserLikedRecord 添加用户点赞记录。
-//
-// 参数：
-//   - uid：用户ID
-//   - postID：帖子ID
-//   - tx：事务 当为nil时自动创建事务
-//
-// 返回值：
-//   - error：如果在添加过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (store *UserStore) AddUserLikedRecord(uid, postID int64, tx *gorm.DB) error {
-	if tx == nil {
-		tx = store.db.Begin()
-		defer tx.Commit()
+	favorited := make([]int64, len(postFavorites))
+	for index, postFavorite := range postFavorites {
+		favorited[index] = postFavorite.PostID
 	}
 
-	result := tx.Model(&models.UserPostStatus{}).
-		Where("uid = ? AND NOT ARRAY[?::bigint] <@ \"liked\"", uid, postID).
-		Update("liked", gorm.Expr("array_append(\"liked\", ?)", postID))
-
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
-		return errors.New("user has liked this post")
-	}
-
-	return nil
-}
-
-// RemoveUserLikedRecord 移除用户点赞记录。
-//
-// 参数：
-//   - uid：用户ID
-//   - postID：帖子ID
-//   - tx：事务 当为nil时自动创建事务
-//
-// 返回值：
-//   - error：如果在移除过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (store *UserStore) RemoveUserLikedRecord(uid, postID int64, tx *gorm.DB) error {
-	if tx == nil {
-		tx = store.db.Begin()
-		defer tx.Commit()
-	}
-
-	result := tx.Model(&models.UserPostStatus{}).
-		Where("uid = ? AND ARRAY[?::bigint] <@ \"liked\"", uid, postID).
-		Update("liked", gorm.Expr("array_remove(\"liked\", ?)", postID))
-
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
-		return errors.New("user has not liked this post")
-	}
-
-	return nil
-}
-
-// AddUserFavoriteRecord 添加用户收藏记录。
-//
-// 参数：
-//   - uid：用户ID
-//   - postID：帖子ID
-//   - tx：事务 当为nil时自动创建事务
-//
-// 返回值：
-//   - error：如果在添加过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (store *UserStore) AddUserFavoriteRecord(uid, postID int64, tx *gorm.DB) error {
-	if tx == nil {
-		tx = store.db.Begin()
-		defer tx.Commit()
-	}
-
-	result := tx.Model(&models.UserPostStatus{}).
-		Where("uid = ? AND NOT ARRAY[?::bigint] <@ \"favourited\"", uid, postID).
-		Update("favourited", gorm.Expr("array_append(\"favourited\", ?)", postID))
-
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
-		return errors.New("user has favourited this post")
-	}
-
-	return nil
-}
-
-// RemoveUserFavoriteRecord 移除用户收藏记录。
-//
-// 参数：
-//   - uid：用户ID
-//   - postID：帖子ID
-//   - tx：事务 当为nil时自动创建事务
-//
-// 返回值：
-//   - error：如果在移除过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (store *UserStore) RemoveUserFavoriteRecord(uid, postID int64, tx *gorm.DB) error {
-	if tx == nil {
-		tx = store.db.Begin()
-		defer tx.Commit()
-	}
-
-	result := tx.Model(&models.UserPostStatus{}).
-		Where("uid = ? AND ARRAY[?::bigint] <@ \"favourited\"", uid, postID).
-		Update("favourited", gorm.Expr("array_remove(\"favourited\", ?)", postID))
-
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
-		return errors.New("user has not favourited this post")
-	}
-
-	return nil
+	return favorited, nil
 }

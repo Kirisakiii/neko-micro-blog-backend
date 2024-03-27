@@ -25,13 +25,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
 )
 
 // PostStore 博文信息数据库
 type PostStore struct {
-	db  *gorm.DB
-	rds *redis.Client
+	db    *gorm.DB
+	rds   *redis.Client
+	mongo *mongo.Client
 }
 
 // NewPostStore 是一个工厂方法，用于创建 PostStore 的新实例。
@@ -42,7 +46,11 @@ type PostStore struct {
 // 返回值
 // 它初始化并返回一个 PostStore，并关联了相应的 gorm.DB。
 func (factory *Factory) NewPostStore() *PostStore {
-	return &PostStore{db: factory.db, rds: factory.rds}
+	return &PostStore{
+		db:    factory.db,
+		rds:   factory.rds,
+		mongo: factory.mongo,
+	}
 }
 
 // GetPostList 获取适用于用户查看的帖子信息列表。
@@ -50,9 +58,15 @@ func (factory *Factory) NewPostStore() *PostStore {
 // 返回值：
 // - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
 // - error: 在检索过程中遇到的任何错误，如果有的话。
-func (store *PostStore) GetPostList() ([]models.PostInfo, error) {
+func (store *PostStore) GetPostList(from string, length int) ([]models.PostInfo, error) {
 	var posts []models.PostInfo
-	if result := store.db.Order("id desc").Find(&posts); result.Error != nil {
+	if from != "" {
+		if result := store.db.Where("id < ?", from).Order("id desc").Limit(length).Find(&posts); result.Error != nil {
+			return nil, result.Error
+		}
+		return posts, nil
+	}
+	if result := store.db.Order("id desc").Limit(length).Find(&posts); result.Error != nil {
 		return nil, result.Error
 	}
 	return posts, nil
@@ -102,10 +116,25 @@ func (store *PostStore) ValidatePostExistence(postID uint64) (bool, error) {
 // 返回值：
 //   - *models.PostInfo：如果找到了相应的用户信息，则返回该用户信息，否则返回nil。
 //   - error：如果在获取过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (store *PostStore) GetPostInfo(postID uint64) (models.PostInfo, error) {
+func (store *PostStore) GetPostInfo(postID uint64) (models.PostInfo, int64, int64, error) {
 	post := models.PostInfo{}
 	result := store.db.Where("id = ?", postID).First(&post)
-	return post, result.Error
+	if result.Error != nil {
+		return models.PostInfo{}, 0, 0, result.Error
+	}
+
+	postLikeCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_LIKE_COLLECTION)
+	likeCount, err := postLikeCollection.CountDocuments(context.Background(), bson.D{{Key: "post_id", Value: postID}})
+	if err != nil {
+		return models.PostInfo{}, 0, 0, err
+	}
+	postFavouriteCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_FAVORITE_COLLECTION)
+	favouriteCount, err := postFavouriteCollection.CountDocuments(context.Background(), bson.D{{Key: "post_id", Value: postID}})
+	if err != nil {
+		return models.PostInfo{}, 0, 0, err
+	}
+
+	return post, likeCount, favouriteCount, nil
 }
 
 // CreatePost 根据用户提交的帖子信息创建帖子。
@@ -323,26 +352,27 @@ func (store *PostStore) CheckCacheImageAvaliable(uuid string) (bool, error) {
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) LikePost(uid, postID int64, userStore *UserStore) error {
-	tx := store.db.Begin()
-	// 更新博文点赞记录
-	result := tx.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_append(\"like\", ?)", uid))
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
+func (store *PostStore) LikePost(uid, postID int64) error {
+	// 构造查询条件
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "post_id", Value: postID},
 	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
+	// 构造更新内容
+	update := bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "liked_at", Value: time.Now()},
+		}},
+	}
+
+	// 更新博文点赞记录
+	postLikeCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_LIKE_COLLECTION)
+	_, err := postLikeCollection.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
+	// 重复点赞
+	if mongo.IsDuplicateKeyError(err) {
 		return errors.New("user has liked this post")
 	}
-
-	// 更新用户点赞记录
-	err := userStore.AddUserLikedRecord(uid, postID, tx)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit().Error
+	return err
 }
 
 // CancelLikePost 取消点赞博文
@@ -353,26 +383,18 @@ func (store *PostStore) LikePost(uid, postID int64, userStore *UserStore) error 
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) CancelLikePost(uid, postID int64, userStore *UserStore) error {
-	tx := store.db.Begin()
-	// 更新博文点赞记录
-	result := tx.Model(&models.PostInfo{}).Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"like\"", postID, uid).Update("like", gorm.Expr("array_remove(\"like\", ?)", uid))
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
+func (store *PostStore) CancelLikePost(uid, postID int64) error {
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "post_id", Value: postID},
 	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
+
+	postLikeCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_LIKE_COLLECTION)
+	_, err := postLikeCollection.DeleteOne(context.Background(), filter)
+	if mongo.ErrNoDocuments == err {
 		return errors.New("user has not liked this post")
 	}
-
-	// 更新用户点赞记录
-	err := userStore.RemoveUserLikedRecord(uid, postID, tx)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit().Error
+	return err
 }
 
 // FavouritePost 收藏博文
@@ -383,24 +405,23 @@ func (store *PostStore) CancelLikePost(uid, postID int64, userStore *UserStore) 
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) FavouritePost(uid, postID int64, userStore *UserStore) error {
-	tx := store.db.Begin()
-	// 更新博文收藏记录
-	result := tx.Model(&models.PostInfo{}).Where("id = ? AND NOT ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).Update("favourite", gorm.Expr("array_append(\"favourite\", ?)", uid))
-	if result.Error != nil {
-		return result.Error
+func (store *PostStore) FavouritePost(uid, postID int64) error {
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "post_id", Value: postID},
 	}
-	if result.RowsAffected == 0 {
-		return errors.New("user has favourite this post")
-	}
-
-	// 更新用户收藏记录
-	err := userStore.AddUserFavoriteRecord(uid, postID, tx)
-	if err != nil {
-		return err
+	update := bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "favourited_at", Value: time.Now()},
+		}},
 	}
 
-	return tx.Commit().Error
+	postFavouriteCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_FAVORITE_COLLECTION)
+	_, err := postFavouriteCollection.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
+	if mongo.IsDuplicateKeyError(err) {
+		return errors.New("user has favourited this post")
+	}
+	return err
 }
 
 // CancelFavouritePost 取消收藏博文
@@ -411,27 +432,18 @@ func (store *PostStore) FavouritePost(uid, postID int64, userStore *UserStore) e
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (store *PostStore) CancelFavouritePost(uid, postID int64, userStore *UserStore) error {
-	tx := store.db.Begin()
-	// 更新博文收藏记录
-	result := tx.Model(&models.PostInfo{}).
-		Where("id = ? AND ARRAY[?::bigint] <@ post_infos.\"favourite\"", postID, uid).
-		Update("favourite", gorm.Expr("array_remove(\"favourite\", ?)", uid))
-
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return errors.New("user has not favourite this post")
+func (store *PostStore) CancelFavouritePost(uid, postID int64) error {
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "post_id", Value: postID},
 	}
 
-	// 更新用户收藏记录
-	err := userStore.RemoveUserFavoriteRecord(uid, postID, tx)
-	if err != nil {
-		return err
+	postFavouriteCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_FAVORITE_COLLECTION)
+	_, err := postFavouriteCollection.DeleteOne(context.Background(), filter)
+	if mongo.ErrNoDocuments == err {
+		return errors.New("user has not favourited this post")
 	}
-
-	return tx.Commit().Error
+	return err
 }
 
 // GetPostUserStatus 获取用户对帖子的状态
@@ -445,16 +457,25 @@ func (store *PostStore) CancelFavouritePost(uid, postID int64, userStore *UserSt
 //   - bool：用户是否收藏
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) GetPostUserStatus(uid, postID int64) (bool, bool, error) {
-	var count int64
-	result := store.db.Model(&models.PostInfo{}).Where("id = ? AND ? = ANY(\"like\")", postID, uid).Count(&count)
-	if result.Error != nil {
-		return false, false, result.Error
+	// 构造查询条件
+	filter := bson.D{
+		{Key: "uid", Value: uid},
+		{Key: "post_id", Value: postID},
+	}
+
+	// 查询博文点赞记录
+	postLikeCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_LIKE_COLLECTION)
+	count, err := postLikeCollection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		return false, false, err
 	}
 	isLiked := count > 0
 
-	result = store.db.Model(&models.PostInfo{}).Where("id = ? AND ? = ANY(\"favourite\")", postID, uid).Count(&count)
-	if result.Error != nil {
-		return false, false, result.Error
+	// 查询博文收藏记录
+	postFavouriteCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_FAVORITE_COLLECTION)
+	count, err = postFavouriteCollection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		return false, false, err
 	}
 	isFavourited := count > 0
 
