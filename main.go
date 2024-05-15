@@ -255,6 +255,16 @@ func main() {
 	search := api.Group("/search")
 	search.Get("/post", searchController.NewSearchPostHandler()) // 搜索文章
 
+    // follow 路由
+	followController := controllerFactory.NewFollowController()
+	follow := api.Group("/follow")
+	follow.Post("/new", authMiddleware.NewMiddleware(), followController.NewCreateFollowHandler())                   // 关注用户
+	follow.Post("/delete", authMiddleware.NewMiddleware(), followController.NewCancelFollowHandler())                // 取消关注用户
+	follow.Get("/list", authMiddleware.NewMiddleware(), followController.NewFollowListHandler())                     // 获取关注列表
+	follow.Get("/list-count", authMiddleware.NewMiddleware(), followController.NewFollowCountHandler())              // 获取关注人数
+	follow.Get("/follower-list", authMiddleware.NewMiddleware(), followController.NewFollowerListHandler())          // 获取粉丝列表
+	follow.Get("/follower-list-count", authMiddleware.NewMiddleware(), followController.NewFollowerCountHandler())   // 获取粉丝人数
+
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
 }
