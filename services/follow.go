@@ -13,15 +13,15 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 )
 
-// CommentService 评论服务
+// FollowService 关注服务
 type FollowService struct {
 	followStore *stores.FollowStore
 }
 
-// NewFollowService 返回一个新的评论服务实例。
+// NewFollowService 返回一个新的关注服务实例。
 //
 // 返回：
-//   - *FollowService: 返回一个指向新的评论服务实例的指针。
+//   - *FollowService: 返回一个指向新的关注服务实例的指针。
 func (factory *Factory) NewFollowService() *FollowService {
 	return &FollowService{
 		followStore: factory.storeFactory.NewFollowStore(),
@@ -37,7 +37,6 @@ func (factory *Factory) NewFollowService() *FollowService {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (service *FollowService) FollowUser(uid, followedID uint64) error {
-	// 调用follow存储中的点赞方法
 	return service.followStore.FollowUser(uid, followedID)
 }
 
@@ -50,15 +49,14 @@ func (service *FollowService) FollowUser(uid, followedID uint64) error {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (service *FollowService) CancelFollowUser(uid, followedID uint64) error {
-	// 调follow存储中的关注方法
 	return service.followStore.CancelFollowUser(uid, followedID)
 }
 
 // GetFOllowList 获取关注列表
 //
 // 返回值：
-//   - 成功则返回关注列表
-//   - 失败返回nil
+//   - []models.FollowInfo：关注列表
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (service *FollowService) GetFollowList(userID uint64) ([]models.FollowInfo, error) {
 	return service.followStore.GetFollowList(userID)
 }
@@ -69,21 +67,17 @@ func (service *FollowService) GetFollowList(userID uint64) ([]models.FollowInfo,
 //   - uid：用户ID
 //
 // 返回值：
-//   - 成功则返回关注数量
+//   - int64：关注数量
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *FollowService) GetFollowCountByUID(uid uint64) (int, error) {
-    count, err := service.followStore.GetFollowedsByUID(uid)
-    if err != nil {
-        return 0, err
-    }
-    return count, nil
+func (service *FollowService) GetFollowCountByUID(uid uint64) (int64, error) {
+    return service.followStore.GetFollowedsByUID(uid)
 }
 
 // GetFOllowerList 获取关注列表
 //
 // 返回值：
-//   - 成功则返回粉丝列表
-//   - 失败返回nil
+//   - []models.FollowInfo：粉丝列表
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (service *FollowService) GetFollowerList(userID uint64) ([]models.FollowInfo, error) {
 	return service.followStore.GetFollowerList(userID)
 }
@@ -94,12 +88,8 @@ func (service *FollowService) GetFollowerList(userID uint64) ([]models.FollowInf
 //	  - uid：用户ID
 //
 // 返回值：
-//	  - 成功则返回粉丝数量
+//	  - int64：成功则返回粉丝数量
 //	  - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *FollowService) GetFollowerCountByUID(uid uint64) (int, error) {
-    count, err := service.followStore.GetFollowersByUID(uid)
-    if err != nil {
-        return 0, err
-    }
-    return count, nil
+func (service *FollowService) GetFollowerCountByUID(uid uint64) (int64, error) {
+    return service.followStore.GetFollowersByUID(uid)
 }

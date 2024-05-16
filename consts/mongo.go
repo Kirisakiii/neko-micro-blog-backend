@@ -5,5 +5,5 @@ const (
 	POST_LIKE_COLLECTION     = "post_likes"
 	POST_FAVORITE_COLLECTION = "post_favourites"
 	COMMENT_RATE_COLLECTION  = "comment_rates"
-	POST_FOLLOW_RECORD_COLLECTION = "post_follow_records"
+	FOLLOW_RECORD_COLLECTION = "follow_records"
 )
