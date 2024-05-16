@@ -151,7 +151,7 @@ func (controller *FollowController) NewFollowCountHandler() fiber.Handler {
 			)
 		}
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64}{count}),
+			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64 `json:"count"`}{count}),
 		)
 	}
 }
@@ -217,7 +217,7 @@ func (controller *FollowController) NewFollowerCountHandler() fiber.Handler {
 			)
 		}
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64}{count}),
+			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64 `json:"count"`}{count}),
 		)
 	}
 }
