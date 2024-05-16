@@ -140,7 +140,7 @@ func init() {
 	searchServiceClient = search.NewSearchEngineClient(searchSeviceConn)
 
 	// 建立数据访问层工厂
-	storeFactory = stores.NewFactory(db, redisClient, mongoClient,  searchServiceClient)
+	storeFactory = stores.NewFactory(db, redisClient, mongoClient, searchServiceClient)
 
 	// 建立控制器层工厂
 	controllerFactory = controllers.NewFactory(
@@ -254,6 +254,16 @@ func main() {
 	searchController := controllerFactory.NewSearchController(searchServiceClient)
 	search := api.Group("/search")
 	search.Get("/post", searchController.NewSearchPostHandler()) // 搜索文章
+
+	// follow 路由
+	followController := controllerFactory.NewFollowController()
+	follow := api.Group("/follow")
+	follow.Post("/new", authMiddleware.NewMiddleware(), followController.NewCreateFollowHandler())    // 关注用户
+	follow.Post("/delete", authMiddleware.NewMiddleware(), followController.NewCancelFollowHandler()) // 取消关注用户
+	follow.Get("/list", followController.NewFollowListHandler())                                      // 获取关注列表
+	follow.Get("/list-count", followController.NewFollowCountHandler())                               // 获取关注人数
+	follow.Get("/follower-list", followController.NewFollowerListHandler())                           // 获取粉丝列表
+	follow.Get("/follower-list-count", followController.NewFollowerCountHandler())                    // 获取粉丝人数
 
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
