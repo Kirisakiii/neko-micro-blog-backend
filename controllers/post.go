@@ -246,11 +246,11 @@ func (controller *PostController) NewPostUserStatusHandler() fiber.Handler {
 	}
 }
 
-// NewUploadPostImageHandler 返回一个用于处理上传博文图片请求的 Fiber 处理函数
+// NewUploadPostImageFromFileHandler 返回一个用于处理上传博文图片请求的 Fiber 处理函数
 //
 // 返回值：
 //   - fiber.Handler：新的上传博文图片函数
-func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
+func (controller *PostController) NewUploadPostImageFromFileHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 接收文件
 		form, err := ctx.MultipartForm()
@@ -274,6 +274,37 @@ func (controller *PostController) NewUploadPostImageHandler() fiber.Handler {
 		}
 
 		UUID, err := controller.postService.UploadPostImage(files[0])
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		return ctx.Status(200).JSON(serializers.NewResponse(
+			consts.SUCCESS,
+			"succeed",
+			serializers.NewUploadPostImageResponse(UUID),
+		))
+	}
+}
+
+// NewUploadPostImageFromURLHandler
+//
+// 返回值：
+//   - fiber.Handler：新的上传博文图片函数
+func (controller *PostController) NewUploadPostImageFromURLHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 解析请求
+		reqBody := types.PostURLImageBody{}
+		err := ctx.BodyParser(&reqBody)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}	
+
+		// 上传图片
+		UUID, err := controller.postService.UploadPostImageFromURL(reqBody.URL)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),

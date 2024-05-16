@@ -44,6 +44,11 @@ type UserPostInfo struct {
 
 }
 
+// PostURLImageBody 创建博文请求体
+type PostURLImageBody struct {
+	URL string `json:"url" form:"url"` // 图片URL
+}
+
 // PostCreateBody 创建博文请求体
 type PostCreateBody struct {
 	Title   string   `json:"title" form:"title"`     //标题
