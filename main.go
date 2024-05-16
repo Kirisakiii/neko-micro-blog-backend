@@ -140,7 +140,7 @@ func init() {
 	searchServiceClient = search.NewSearchEngineClient(searchSeviceConn)
 
 	// 建立数据访问层工厂
-	storeFactory = stores.NewFactory(db, redisClient, mongoClient,  searchServiceClient)
+	storeFactory = stores.NewFactory(db, redisClient, mongoClient, searchServiceClient)
 
 	// 建立控制器层工厂
 	controllerFactory = controllers.NewFactory(
@@ -210,16 +210,17 @@ func main() {
 	// Post 路由
 	postController := controllerFactory.NewPostController(searchServiceClient)
 	post := api.Group("/post")
-	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                              // 获取文章列表
-	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())            // 获取用户文章状态
-	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                       // 创建文章
-	post.Post("/upload-img", authMiddleware.NewMiddleware(), postController.NewUploadPostImageHandler())           // 上传博文图片
-	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler())                        // 点赞文章
-	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler())           // 取消点赞文章
-	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler())              // 收藏文章
-	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler()) // 取消收藏文章
-	post.Get("/:post", postController.NewPostDetailHandler())                                                      // 获取文章信息
-	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())                   // 删除文章
+	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                                 // 获取文章列表
+	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())               // 获取用户文章状态
+	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                          // 创建文章
+	post.Post("/upload/img/file", authMiddleware.NewMiddleware(), postController.NewUploadPostImageFromFileHandler()) // 上传博文图片
+	post.Post("/upload/img/url", authMiddleware.NewMiddleware(), postController.NewUploadPostImageFromURLHandler())   // 从 URL 上传博文图片
+	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler())                           // 点赞文章
+	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler())              // 取消点赞文章
+	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler())                 // 收藏文章
+	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler())    // 取消收藏文章
+	post.Get("/:post", postController.NewPostDetailHandler())                                                         // 获取文章信息
+	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())                      // 删除文章
 
 	// Comment 路由
 	commentController := controllerFactory.NewCommentController()

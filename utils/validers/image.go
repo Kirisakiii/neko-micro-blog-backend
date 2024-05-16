@@ -7,6 +7,7 @@ Copyright (c) [2024], Author(s):
 package validers
 
 import (
+	"bytes"
 	"errors"
 	"image"
 	"image/jpeg"
@@ -70,6 +71,55 @@ func ValidImageFile(fileHeader *multipart.FileHeader, file *multipart.File, minW
 	_, err = (*file).Seek(0, 0)
 	if err != nil {
 		return fileType, err
+	}
+
+	return fileType, nil
+}
+
+// ValidImageFileFromReader 校验图片文件
+//
+// 参数
+//   - reader：文件读取器
+//   - minWidth：最小宽度
+//   - minHeight：最小高度
+//   - maxSize：最大文件体积
+//
+// 返回值
+//   - types.PostImageFileType：头像文件类型
+//   - error：如果文件不合法，则返回相应的错误信息，否则返回nil
+func ValidImageFileFromReader(data []byte, contentType string, minWidth, minHeight int, maxSize int64) (types.ImageFileType, error) {
+	fileType := types.IMAGE_FILE_TYPE_UNKNOWN
+
+	if int64(len(data)) > maxSize {
+		return fileType, errors.New("image file size too large")
+	}
+
+	var (
+		imgConfig image.Config
+		err       error
+	)
+
+	// 校验文件类型并解码图片
+	switch contentType {
+	case "image/jpeg":
+		fileType = types.IMAGE_FILE_TYPE_JPEG
+		imgConfig, err = jpeg.DecodeConfig(bytes.NewReader(data))
+	case "image/png":
+		fileType = types.IMAGE_FILE_TYPE_PNG
+		imgConfig, err = png.DecodeConfig(bytes.NewReader(data))
+	case "image/webp":
+		fileType = types.IMAGE_FILE_TYPE_WEBP
+		imgConfig, err = webp.DecodeConfig(bytes.NewReader(data))
+	default:
+		return fileType, errors.New("image file type not supported")
+	}
+	if err != nil {
+		return fileType, err
+	}
+
+	// 校验图片尺寸
+	if imgConfig.Width < minWidth || imgConfig.Height < minHeight {
+		return fileType, errors.New("image size too small")
 	}
 
 	return fileType, nil

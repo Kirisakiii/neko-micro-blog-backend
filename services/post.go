@@ -12,7 +12,10 @@ package services
 import (
 	"context"
 	"errors"
+	"io"
 	"mime/multipart"
+	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
@@ -186,6 +189,61 @@ func (service *PostService) UploadPostImage(postImage *multipart.FileHeader) (st
 
 	// 调整图片大小
 	convertedImage, err := converters.ResizePostImage(fileType, &imageFile)
+	if err != nil {
+		return "", err
+	}
+
+	// 保存在暂存区并返回UUID
+	return service.postStore.CachePostImage(convertedImage)
+}
+
+// UploadPostImageFromURL 上传博文图片
+//
+// 参数：
+//   - imageURL：待上传的博文图片URL
+//
+// 返回值：
+//   - string：图片UUID
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) UploadPostImageFromURL(imageURL string) (string, error) {
+	// 下载图片
+	client := &http.Client{}
+	if os.Getenv("HTTP_PROXY") != "" {
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
+	}
+
+	resp, err := client.Get(imageURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New("failed to download image")
+	}
+
+	// 将reader的数据读取到内存中
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	// 验证图像文件的有效性，包括尺寸和文件类型等
+	fileType, err := validers.ValidImageFileFromReader(
+		data,
+		resp.Header.Get("Content-Type"),
+		consts.POST_IMAGE_MIN_WIDTH,
+		consts.POST_IMAGE_MIN_HEIGHT,
+		consts.POST_IMAGE_MAX_FILE_SIZE,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	// 调整图片大小
+	convertedImage, err := converters.ResizeURLImage(fileType, data)
 	if err != nil {
 		return "", err
 	}
