@@ -353,10 +353,21 @@ func (store *PostStore) CheckCacheImageAvaliable(uuid string) (bool, error) {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) LikePost(uid, postID int64) error {
+	// 查询博文信息
+	postInfo := models.PostInfo{}
+	result := store.db.Where("id = ?", postID).First(&postInfo)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return errors.New("post does not exist")
+	}
+	if result.Error != nil {
+		return result.Error
+	}
+
 	// 构造查询条件
 	filter := bson.D{
 		{Key: "uid", Value: uid},
 		{Key: "post_id", Value: postID},
+		{Key: "poster_uid", Value: postInfo.UID},
 	}
 	// 构造更新内容
 	update := bson.D{

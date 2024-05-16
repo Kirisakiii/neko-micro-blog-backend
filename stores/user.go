@@ -471,3 +471,25 @@ func (store *UserStore) GetUserFavoriteRecord(uid int64) ([]int64, error) {
 
 	return favorited, nil
 }
+
+// GetUserLikesCount 获取用户获赞数。
+//
+// 参数：
+//   - uid：用户ID
+//
+// 返回值：
+//   - int64：用户获赞数
+//   - error：如果在获取过程中发生错误，则返回相应的错误信息，否则返回nil。
+func (store *UserStore) GetUserLikesCount(uid uint64) (int64, error) {
+	postLikeCollection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.POST_LIKE_COLLECTION)
+	filter := bson.D{{Key: "poster_uid", Value: uid}}
+	ctx := context.Background()
+	defer ctx.Done()
+
+	count, err := postLikeCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}

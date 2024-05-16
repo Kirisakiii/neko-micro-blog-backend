@@ -189,6 +189,18 @@ func (service *UserService) LoginUser(username string, password string, ip strin
 	return token, nil
 }
 
+// GetUserLikesCount 获取用户获赞数。
+//
+// 参数：
+//   - uid：用户ID
+//
+// 返回值：
+//   - int64：用户获赞数
+//   - error：如果在获取过程中发生错误，则返回相应的错误信息，否则返回nil。
+func (service *UserService) GetUserLikesCount(uid uint64) (int64, error) {
+	return service.userStore.GetUserLikesCount(uid)
+}
+
 // UserUploadAvatar 用户上传头像。
 //
 // 参数：

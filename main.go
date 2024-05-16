@@ -201,6 +201,7 @@ func main() {
 	userController := controllerFactory.NewUserController()
 	user := api.Group("/user")
 	user.Get("/profile", userController.NewProfileHandler())                                             // 查询用户信息
+	user.Get("/likes-count", userController.NewLikesCountHandler())                                      // 获取用户获赞数
 	user.Post("/register", userController.NewRegisterHandler())                                          // 用户注册
 	user.Post("/login", userController.NewLoginHandler())                                                // 用户登录
 	user.Post("/upload-avatar", authMiddleware.NewMiddleware(), userController.NewUploadAvatarHandler()) // 上传头像
@@ -261,6 +262,7 @@ func main() {
 	follow := api.Group("/follow")
 	follow.Post("/new", authMiddleware.NewMiddleware(), followController.NewCreateFollowHandler())    // 关注用户
 	follow.Post("/delete", authMiddleware.NewMiddleware(), followController.NewCancelFollowHandler()) // 取消关注用户
+	follow.Get("/status", authMiddleware.NewMiddleware(), followController.NewFollowStatusHandler())  // 获取关注状态
 	follow.Get("/list", followController.NewFollowListHandler())                                      // 获取关注列表
 	follow.Get("/list-count", followController.NewFollowCountHandler())                               // 获取关注人数
 	follow.Get("/follower-list", followController.NewFollowerListHandler())                           // 获取粉丝列表

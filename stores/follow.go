@@ -91,6 +91,27 @@ func (store *FollowStore) CancelFollowUser(uid, followedID uint64) error {
 	return err
 }
 
+// GetFollowStatus 获取关注状态
+//
+// 参数：
+//   - uid：用户ID
+//   - followedID：被关注用户ID
+//
+// 返回值：
+//   - bool：关注状态
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (store *FollowStore) GetFollowStatus(uid, followedID uint64) (bool, error) {
+	filter := bson.M{
+		"uid":        uid,
+		"followed_id": followedID,
+	}
+	count, err := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection(consts.FOLLOW_RECORD_COLLECTION).CountDocuments(context.Background(), filter)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // GetFollowList 获取关注列表
 //
 // 参数：
