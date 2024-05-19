@@ -270,6 +270,16 @@ func main() {
 	follow.Get("/follower-list", followController.NewFollowerListHandler())           // 获取粉丝列表
 	follow.Get("/follower-list-count", followController.NewFollowerCountHandler())    // 获取粉丝人数
 
+	//target 路由
+	topicController := controllerFactory.NewTopicController()
+	topic := api.Group("/topic")
+	topic.Post("/new", authMiddleware.NewMiddleware(), topicController.NewCreateTopicHandler())             // 创建目标话题
+	topic.Post("/delete", authMiddleware.NewMiddleware(), topicController.DeleteTopicHandler())             // 删除目标话题
+	topic.Get("/detial", topicController.GetTopicdetailHandler())                                           // 获取目标话题信息
+	topic.Post("/like", authMiddleware.NewMiddleware(), topicController.NewLikeTopicHandler())              // 点赞目标话题
+	topic.Post("/cancel-like", authMiddleware.NewMiddleware(), topicController.NewCancelLikeTopicHandler()) // 取消点赞目标话题
+	topic.Post("/dislike", authMiddleware.NewMiddleware(), topicController.NewDislikeTopicHandler())        // 踩目标话题
+	topic.Get("/list", topicController.GetHotTopicsHandler())                                               //获取话题列表
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
 }

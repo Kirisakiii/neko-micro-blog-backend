@@ -6,6 +6,8 @@ Copyright (c) [2024], Author(s):
 */
 package types
 
+import "go.mongodb.org/mongo-driver/bson/primitive"
+
 // UserAuthBody 认证请求体
 type UserAuthBody struct {
 	Username string `json:"username"` // 用户名
@@ -51,9 +53,10 @@ type PostURLImageBody struct {
 
 // PostCreateBody 创建博文请求体
 type PostCreateBody struct {
-	Title   string   `json:"title" form:"title"`     //标题
-	Content string   `json:"content" form:"content"` //内容
-	Images  []string `json:"images" form:"images"`   // 上传图片的UUID
+	Title   string             `json:"title" form:"title"`       //标题
+	Content string             `json:"content" form:"content"`   //内容
+	Images  []string           `json:"images" form:"images"`     // 上传图片的UUID
+	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
 }
 
 // UserCommentDeleteBody 创建博文请求体
@@ -78,3 +81,30 @@ type UserReplyUpdateBody struct {
 type UserReplyDeleteBody struct {
 	ReplyID uint64 `json:"reply_id" form:"reply_id"` // 回复ID
 }
+
+// TopicCreateBody 创建话题请求体
+type TopicCreateBody struct {
+	Description string `json:"description" form:"description"` // 话题描述
+	PostID      uint64 `json:"post_id" form:"post_id"`         // 博文ID
+}
+
+// TopicDeleteBody 删除话题请求体
+type TopicDeleteBody struct {
+	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+}
+
+// TopicListBody 获取话题列表请求体
+type TopicListBody struct {
+	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+}
+
+// TopicLikeBody 点赞话题请求体
+type TopicLikeBody struct {
+    TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+}
+
+// TopicUnLikeBody 取消点赞话题请求体
+type TopicDisLikeBody struct {
+    TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+}
+
