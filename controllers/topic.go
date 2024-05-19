@@ -8,11 +8,14 @@ Copyright (c) [2024], Author(s):
 package controllers
 
 import (
+	"strconv"
+
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/serializers"
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // TopicController 用户控制器
@@ -30,6 +33,55 @@ func (factory *Factory) NewTopicController() *TopicController {
 	}
 }
 
+// TopicListHandler 话题列表处理函数
+//
+// 返回值：
+//   - fiber.Handler：话题列表处理函数
+func (controller *TopicController) TopicListHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 解析请求
+		from := ctx.Query("from")
+		length := ctx.Query("length")
+
+		var fromObejctID primitive.ObjectID
+		if from == "" {
+			fromObejctID = primitive.NewObjectID()
+		} else {
+			var err error
+			fromObejctID, err = primitive.ObjectIDFromHex(from)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+				)
+			}
+		}
+
+		lenghtUint, err := strconv.ParseUint(length, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+
+		if (lenghtUint > 20) || (lenghtUint == 0) {
+			lenghtUint = 20
+		}
+
+		// 调用服务层获取话题列表
+		topics, err := controller.topicService.GetTopicList(fromObejctID, lenghtUint)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		// 返回结果
+		return ctx.Status(200).JSON(
+			serializers.NewResponse(consts.SUCCESS, "", serializers.NewTopicListResponse(topics)),
+		)
+	}
+}
+
 // NewCreateTopicHandler 返回获取用户资料的处理函数。
 //
 // 参数：
@@ -43,17 +95,17 @@ func (controller *TopicController) NewCreateTopicHandler() fiber.Handler {
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
 
 		// 解析请求
-		reqBody := new(types.TopicCreateBody)
-		if err := ctx.BodyParser(reqBody); err != nil {
+		reqBody := types.TopicCreateBody{}
+		if err := ctx.BodyParser(&reqBody); err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
 		}
 
-		// 校验参数
-		if reqBody.PostID == 0 {
+		// 检查请求参数
+		if reqBody.Name == "" {
 			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, "post_id is required"),
+				serializers.NewResponse(consts.PARAMETER_ERROR, "name is required"),
 			)
 		}
 		if reqBody.Description == "" {
@@ -61,9 +113,15 @@ func (controller *TopicController) NewCreateTopicHandler() fiber.Handler {
 				serializers.NewResponse(consts.PARAMETER_ERROR, "description is required"),
 			)
 		}
+		groupID, err := primitive.ObjectIDFromHex(reqBody.BundledGroupID)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
 
 		// 创建目标
-		tagID, err := controller.topicService.CreateTopic(claims.UID, reqBody)
+		tagID, err := controller.topicService.CreateTopic(claims.UID, reqBody, groupID)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -84,15 +142,21 @@ func (controller *TopicController) NewCreateTopicHandler() fiber.Handler {
 func (controller *TopicController) DeleteTopicHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 解析删除目标请求
-		reqBody := new(types.TopicDeleteBody)
-		if err := ctx.BodyParser(reqBody); err != nil {
+		reqBody := types.TopicDeleteBody{}
+		if err := ctx.BodyParser(&reqBody); err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+		topicID, err := primitive.ObjectIDFromHex(reqBody.TopicID)
+		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
 		}
 
 		// 删除目标
-		err := controller.topicService.DeleteTarget(reqBody.TopicID)
+		err = controller.topicService.DeleteTopic(topicID)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -106,21 +170,23 @@ func (controller *TopicController) DeleteTopicHandler() fiber.Handler {
 	}
 }
 
-// GetTopicdetailHandler 获取目标列表的处理函数
+// GetTopicDetailHandler 获取目标列表的处理函数
 //
 // 返回值：
 //   - fiber.Handler：获取目标列表的处理函数。
-func (controller *TopicController) GetTopicdetailHandler() fiber.Handler {
+func (controller *TopicController) GetTopicDetailHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		//解析请求
-		reqBody := new(types.TopicListBody)
-		if err := ctx.BodyParser(reqBody); err != nil {
+		// 解析请求
+		objectIDString := ctx.Query("topic_id")
+		objectID, err := primitive.ObjectIDFromHex(objectIDString)
+		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
 		}
+
 		//调用服务层获取目标列表
-		tagList, err := controller.topicService.GetTopicList(reqBody.TopicID)
+		tagList, err := controller.topicService.GetTopicDetail(objectID)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -129,7 +195,7 @@ func (controller *TopicController) GetTopicdetailHandler() fiber.Handler {
 
 		//返回结果
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "topic details successfully", serializers.NewTopicListResponse(tagList)),
+			serializers.NewResponse(consts.SUCCESS, "", serializers.NewTopicDetailResponse(tagList)),
 		)
 
 	}
@@ -141,16 +207,19 @@ func (controller *TopicController) GetTopicdetailHandler() fiber.Handler {
 //   - fiber.Handler：点赞目标的处理函数
 func (controller *TopicController) NewLikeTopicHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		// 获取Token Claims
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
 		// 解析点赞目标请求
-		reqBody := new(types.TopicLikeBody)
-		if err := ctx.BodyParser(reqBody); err != nil {
+		reqBody := types.TopicLikeBody{}
+		if err := ctx.BodyParser(&reqBody); err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
 		}
 
 		// 点赞目标
-		err := controller.topicService.NewLikeTopicHandler(reqBody.TopicID)
+		err := controller.topicService.NewLikeTopic(reqBody.TopicID, claims.UID)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -170,16 +239,19 @@ func (controller *TopicController) NewLikeTopicHandler() fiber.Handler {
 //   - fiber.Handler：取消点赞目标的处理函数
 func (controller *TopicController) NewCancelLikeTopicHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		// 获取Token Claims
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
 		// 解析取消点赞目标请求
-		reqBody := new(types.TopicLikeBody)
-		if err := ctx.BodyParser(reqBody); err != nil {
+		reqBody := types.TopicLikeBody{}
+		if err := ctx.BodyParser(&reqBody); err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
 		}
 
 		// 取消点赞目标
-		err := controller.topicService.NewCancelLikeTopicHandler(reqBody.TopicID)
+		err := controller.topicService.NewCancelLikeTopic(reqBody.TopicID, claims.UID)
 
 		if err != nil {
 			return ctx.Status(200).JSON(
@@ -200,16 +272,18 @@ func (controller *TopicController) NewCancelLikeTopicHandler() fiber.Handler {
 //   - fiber.Handler：点踩数的处理函数
 func (controller *TopicController) NewDislikeTopicHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
 		// 解析点踩目标请求
-		reqBody := new(types.TopicDisLikeBody)
-		if err := ctx.BodyParser(reqBody); err != nil {
+		reqBody := types.TopicDisLikeBody{}
+		if err := ctx.BodyParser(&reqBody); err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
 		}
 
 		// 点踩目标
-		err := controller.topicService.NewDislikeTopicHandler(reqBody.TopicID)
+		err := controller.topicService.NewDislikeTopic(reqBody.TopicID, claims.UID)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -219,6 +293,37 @@ func (controller *TopicController) NewDislikeTopicHandler() fiber.Handler {
 		// 返回结果
 		return ctx.Status(200).JSON(
 			serializers.NewResponse(consts.SUCCESS, "topic disliked successfully"),
+		)
+	}
+}
+
+// NewCancelDislikeHandler 返回取消点踩数的处理函数
+//
+// 返回值：
+//   - fiber.Handler：取消点踩数的处理函数
+func (controller *TopicController) NewCancelDislikeHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 解析取消点踩目标请求
+		reqBody := types.TopicDisLikeBody{}
+		if err := ctx.BodyParser(&reqBody); err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+
+		// 取消点踩目标
+		err := controller.topicService.CancelDislikeTopic(reqBody.TopicID, claims.UID)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		// 返回结果
+		return ctx.Status(200).JSON(
+			serializers.NewResponse(consts.SUCCESS, "topic cancel dislike successfully"),
 		)
 	}
 }

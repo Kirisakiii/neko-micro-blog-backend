@@ -14,15 +14,23 @@ import (
 
 // CreateTopicResponse 用于将 TopicInfo 转换为 JSON 格式的结构体
 type CreateTopicResponse struct {
-	ID primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ID string `bson:"_id,omitempty" json:"id"`
+}
+
+// TopicDetailResponse 用于将 TopicInfo 转换为 JSON 格式的结构体
+type TopicDetailResponse struct {
+	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name           string             `bson:"name,omitempty" json:"name"`
+	Description    string             `bson:"description,omitempty" json:"description"`
+	BundledGroupID primitive.ObjectID `bson:"bundled_group_id,omitempty" json:"bundled_group_id"`
+	CreatorID      uint64             `bson:"creator_id,omitempty" json:"creator_id"`
+	Like           uint64             `bson:"like,omitempty" json:"like"`
+	DisLike        uint64             `bson:"dislike,omitempty" json:"dislike"`
 }
 
 // TopicListResponse 用于将 TopicInfo 转换为 JSON 格式的结构体
 type TopicListResponse struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Description string             `bson:"description,omitempty" json:"description"`
-	PostID      uint64             `bson:"post_id,omitempty" json:"post_id"`
-	UserID      uint64             `bson:"user_id,omitempty" json:"user_id"`
+	IDs []primitive.ObjectID `bson:"_id,omitempty" json:"ids"`
 }
 
 // NewCreateTopicResponse 用于创建 TopicResponse 实例
@@ -34,24 +42,41 @@ type TopicListResponse struct {
 // - CreateTopicResponse: 创建的 CreateTopicResponse 实例
 func NewCreateTopicResponse(TopicID primitive.ObjectID) CreateTopicResponse {
 	var resp = CreateTopicResponse{
-		ID: TopicID,
+		ID: TopicID.Hex(),
 	}
 	return resp
 }
 
-// NewTopicListResponse 用于创建 TagListResponse 实例
+// NewTopicDetailResponse 用于创建 TopicDetailResponse 实例
 //
 // 参数：
 // - TagInfo: 目标标签的信息
 //
 // 返回值：
-// - TagListResponse: 创建的 TagListResponse 实例
-func NewTopicListResponse(TopicInfo []models.TopicInfo) TopicListResponse {
-	var resp = TopicListResponse{
-		ID:          TopicInfo[0].ID,
-		Description: TopicInfo[0].Description,
-		PostID:      TopicInfo[0].PostID,
-		UserID:      TopicInfo[0].UserID,
+// - TagDetailResponse: 创建的 TagDetailResponse 实例
+func NewTopicDetailResponse(TopicInfo models.TopicInfo) TopicDetailResponse {
+	return TopicDetailResponse{
+		ID:             TopicInfo.ID,
+		Name:           TopicInfo.Name,
+		Description:    TopicInfo.Description,
+		BundledGroupID: TopicInfo.BundledGroupID,
+		CreatorID:      TopicInfo.CreatorID,
+		Like:           TopicInfo.Like,
+		DisLike:        TopicInfo.DisLike,
+	}
+}
+
+// NewTopicListResponse 用于创建 TopicListResponse 实例
+//
+// 参数：
+// - TopicList: 话题列表
+//
+// 返回值：
+// - []TopicDetailResponse: 创建的 TopicListResponse 实例
+func NewTopicListResponse(TopicList []models.TopicInfo) TopicListResponse {
+	var resp TopicListResponse
+	for _, TopicInfo := range TopicList {
+		resp.IDs = append(resp.IDs, TopicInfo.ID)
 	}
 	return resp
 }
