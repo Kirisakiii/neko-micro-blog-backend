@@ -218,7 +218,7 @@ func main() {
 	post.Post("/upload/img/file", authMiddleware, postController.NewUploadPostImageFromFileHandler())                // 上传博文图片
 	post.Post("/upload/img/url", authMiddleware, postController.NewUploadPostImageFromURLHandler())                  // 从 URL 上传博文图片
 	post.Post("/like", authMiddleware, postController.NewLikePostHandler())                                          // 点赞文章
-	post.Post("/forward", authMiddleware, postController.NewForwardPostHandler())                                     // 转发文章
+	post.Post("/forward", authMiddleware, postController.NewForwardPostHandler())                                    // 转发文章
 	post.Post("/cancel-like", authMiddleware, postController.NewCancelLikePostHandler())                             // 取消点赞文章
 	post.Post("/favourite", authMiddleware, postController.NewFavouritePostHandler())                                // 收藏文章
 	post.Post("/cancel-favourite", authMiddleware, postController.NewCancelFavouritePostHandler())                   // 取消收藏文章
@@ -273,15 +273,15 @@ func main() {
 	// topic 路由
 	topicController := controllerFactory.NewTopicController()
 	topic := api.Group("/topic")
-	topic.Get("/detail", topicController.GetTopicDetailHandler())                                            // 获取目标话题信息
-	topic.Get("/hotest", topicController.GetHotTopicsHandler())                                              // 获取最热话题列表
-	topic.Get("/list", topicController.TopicListHandler())                                                   // 获取话题列表
-	topic.Post("/new", authMiddleware.NewMiddleware(), topicController.NewCreateTopicHandler())              // 创建目标话题
-	topic.Post("/delete", authMiddleware.NewMiddleware(), topicController.DeleteTopicHandler())              // 删除目标话题
-	topic.Post("/like", authMiddleware.NewMiddleware(), topicController.NewLikeTopicHandler())               // 点赞目标话题
-	topic.Post("/cancel-like", authMiddleware.NewMiddleware(), topicController.NewCancelLikeTopicHandler())  // 取消点赞目标话题
-	topic.Post("/dislike", authMiddleware.NewMiddleware(), topicController.NewDislikeTopicHandler())         // 踩目标话题
-	topic.Post("/cancel-dislike", authMiddleware.NewMiddleware(), topicController.NewCancelDislikeHandler()) // 取消踩目标话题
+	topic.Get("/detail", topicController.GetTopicDetailHandler())                            // 获取目标话题信息
+	topic.Get("/hotest", topicController.GetHotTopicsHandler())                              // 获取最热话题列表
+	topic.Get("/list", topicController.TopicListHandler())                                   // 获取话题列表
+	topic.Post("/new", authMiddleware, topicController.NewCreateTopicHandler())              // 创建目标话题
+	topic.Post("/delete", authMiddleware, topicController.DeleteTopicHandler())              // 删除目标话题
+	topic.Post("/like", authMiddleware, topicController.NewLikeTopicHandler())               // 点赞目标话题
+	topic.Post("/cancel-like", authMiddleware, topicController.NewCancelLikeTopicHandler())  // 取消点赞目标话题
+	topic.Post("/dislike", authMiddleware, topicController.NewDislikeTopicHandler())         // 踩目标话题
+	topic.Post("/cancel-dislike", authMiddleware, topicController.NewCancelDislikeHandler()) // 取消踩目标话题
 
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))
