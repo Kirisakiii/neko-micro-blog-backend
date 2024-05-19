@@ -6,4 +6,5 @@ const (
 	POST_FAVORITE_COLLECTION = "post_favourites"
 	COMMENT_RATE_COLLECTION  = "comment_rates"
 	FOLLOW_RECORD_COLLECTION = "follow_records"
+	TOPIC_COLLECTION           = "topics"
 )

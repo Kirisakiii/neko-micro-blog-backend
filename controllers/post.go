@@ -184,6 +184,12 @@ func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 			)
 		}
 
+		if reqBody.TopicID.IsZero(){
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "post topic id is required"),
+			)
+		}
+		
 		// 创建博文
 		postInfo, err := controller.postService.CreatePost(claims.UID, ctx.IP(), reqBody)
 		if err != nil {
