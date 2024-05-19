@@ -90,6 +90,39 @@ func (controller *FollowController) NewCancelFollowHandler() fiber.Handler {
 	}
 }
 
+// NewFollowStatusHandler 返回一个用于处理获取关注状态请求的 Fiber 处理函数
+//
+// 返回：
+//   - fiber.Handler: 新的获取关注状态函数
+func (controller *FollowController) NewFollowStatusHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取followedID
+		followedID := ctx.Query("user_id")
+		if followedID == "" {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "user_id is required"))
+		}
+
+		// 解析followedID
+		followedIDUint, err := strconv.ParseUint(followedID, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "user_id is invalid"))
+		}
+
+		// 执行获取关注状态操作
+		status, err := controller.followService.GetFollowStatus(claims.UID, followedIDUint)
+		if err != nil {
+			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
+		}
+
+		return ctx.JSON(serializers.NewResponse(consts.SUCCESS, "succeed", struct {
+			Followed bool `json:"followed"`
+		}{status}))
+	}
+}
+
 // NewFollowListHandler() 返回一个用于处理获取关注列表请求的 Fiber 处理函数
 //
 // 返回：
@@ -151,7 +184,9 @@ func (controller *FollowController) NewFollowCountHandler() fiber.Handler {
 			)
 		}
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64}{count}),
+			serializers.NewResponse(consts.SUCCESS, "succeed", struct {
+				Count int64 `json:"count"`
+			}{count}),
 		)
 	}
 }
@@ -217,7 +252,9 @@ func (controller *FollowController) NewFollowerCountHandler() fiber.Handler {
 			)
 		}
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64}{count}),
+			serializers.NewResponse(consts.SUCCESS, "succeed", struct {
+				Count int64 `json:"count"`
+			}{count}),
 		)
 	}
 }

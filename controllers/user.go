@@ -44,6 +44,9 @@ func (factory *Factory) NewUserController() *UserController {
 //   - fiber.Handler：新的获取用户资料的处理函数。
 func (controller *UserController) NewProfileHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		// 设置缓存控制头
+		ctx.Set("Cache-Control", "public, max-age=3")
+
 		// 判断传入的查询参数是UID还是Username
 		uidString := ctx.Query("uid")
 		username := ctx.Query("username")
@@ -92,6 +95,41 @@ func (controller *UserController) NewProfileHandler() fiber.Handler {
 		// 返回结果
 		return ctx.Status(200).JSON(
 			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewUserProfileData(user)),
+		)
+	}
+}
+
+// NewLikesCountHandler 返回获取用户获赞数的处理函数。
+//
+// 返回值：
+//   - fiber.Handler：新的获取用户获赞数的处理函数。
+func (controller *UserController) NewLikesCountHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 获取查询UID
+		uidString := ctx.Query("uid")
+		if uidString == "" {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "uid is required"),
+			)
+		}
+		uid, err := strconv.ParseUint(uidString, 10, 64)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "uid is invalid"),
+			)
+		}
+
+		// 获取用户获赞数
+		likesCount, err := controller.userService.GetUserLikesCount(uid)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		// 返回结果
+		return ctx.Status(200).JSON(
+			serializers.NewResponse(consts.SUCCESS, "succeed", struct {Count int64 `json:"count"`}{likesCount}),
 		)
 	}
 }

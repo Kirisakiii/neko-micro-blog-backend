@@ -72,6 +72,30 @@ func (store *PostStore) GetPostList(from string, length int) ([]models.PostInfo,
 	return posts, nil
 }
 
+// GetFollowPostList 获取适用于用户查看的关注用户的帖子信息列表。
+//
+// 参数：
+// - uid：关注的用户ID列表
+// - from：起始帖子ID
+// - length：帖子数量
+//
+// 返回值：
+// - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
+// - error: 在检索过程中遇到的任何错误，如果有的话。
+func (store *PostStore) GetFollowPostList(uidList []uint64, from string, length int) ([]models.PostInfo, error) {
+	var posts []models.PostInfo
+	if from != "" {
+		if result := store.db.Where("uid IN ?", uidList).Where("id < ?", from).Order("id desc").Limit(length).Find(&posts); result.Error != nil {
+			return nil, result.Error
+		}
+		return posts, nil
+	}
+	if result := store.db.Where("uid IN ?", uidList).Order("id desc").Limit(length).Find(&posts); result.Error != nil {
+		return nil, result.Error
+	}
+	return posts, nil
+}
+
 // GetPostListByUID 获取适用于用户查看的帖子信息列表。
 //
 // 参数：
@@ -345,6 +369,30 @@ func (store *PostStore) CheckCacheImageAvaliable(uuid string) (bool, error) {
 	return true, nil
 }
 
+// ForwardPost 转发博文
+//
+// 参数：
+//   - uid：用户ID
+//   - ipAddr：IP地址
+//   - postID：待转发博文的ID
+//   - content：转发内容
+//
+// 返回值：
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (store *PostStore) ForwardPost(uid uint64, ipAddr string, postID uint64, content string) error {
+	// 将转发信息写入数据库
+	forwardPost := models.PostInfo{
+		ParentPostID: &postID,
+		UID:          uid,
+		IpAddrress:   &ipAddr,
+		Content:      content,
+		IsPublic:     true,
+	}
+
+	result := store.db.Create(&forwardPost)
+	return result.Error
+}
+
 // LikePost 点赞博文
 //
 // 参数：
@@ -353,10 +401,21 @@ func (store *PostStore) CheckCacheImageAvaliable(uuid string) (bool, error) {
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
 func (store *PostStore) LikePost(uid, postID int64) error {
+	// 查询博文信息
+	postInfo := models.PostInfo{}
+	result := store.db.Where("id = ?", postID).First(&postInfo)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return errors.New("post does not exist")
+	}
+	if result.Error != nil {
+		return result.Error
+	}
+
 	// 构造查询条件
 	filter := bson.D{
 		{Key: "uid", Value: uid},
 		{Key: "post_id", Value: postID},
+		{Key: "poster_uid", Value: postInfo.UID},
 	}
 	// 构造更新内容
 	update := bson.D{

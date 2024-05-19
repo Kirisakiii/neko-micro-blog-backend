@@ -52,7 +52,20 @@ func (service *FollowService) CancelFollowUser(uid, followedID uint64) error {
 	return service.followStore.CancelFollowUser(uid, followedID)
 }
 
-// GetFOllowList 获取关注列表
+// GetFollowStatus 获取关注状态
+//
+// 参数：
+//   - uid：用户ID
+//   - followedID：被关注用户ID
+//
+// 返回值：
+//   - bool：关注状态
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *FollowService) GetFollowStatus(uid, followedID uint64) (bool, error) {
+	return service.followStore.GetFollowStatus(uid, followedID)
+}
+
+// GetFollowList 获取关注列表
 //
 // 返回值：
 //   - []models.FollowInfo：关注列表

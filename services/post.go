@@ -107,6 +107,40 @@ func (service *PostService) GetPostList(reqType, uid, length, from string, userS
 	return postIDs, nil
 }
 
+// GetFollowPostList 获取关注用户的帖子信息列表。
+//
+// 参数：
+// - uid：用户ID
+// - from：起始位置
+// - length：获取的帖子数量
+// - followStore：关注存储
+//
+// 返回值：
+// - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
+// - error: 在获取帖子信息过程中遇到的任何错误，如果有的话。
+func (service *PostService) GetFollowPostList(uid uint64, from string, length uint64, followStore *stores.FollowStore) ([]int64, error) {
+	followRecord, err := followStore.GetFollowList(uid)
+	if err != nil || followRecord == nil {
+		return nil, err
+	}
+
+	userIDs := make([]uint64, len(followRecord))
+	for index, record := range followRecord {
+		userIDs[index] = uint64(record.FollowedID)
+	}
+
+	postInfos, err := service.postStore.GetFollowPostList(userIDs, from, int(length))
+	if err != nil {
+		return nil, err
+	}
+
+	postIDs := make([]int64, len(postInfos))
+	for index, post := range postInfos {
+		postIDs[index] = int64(post.ID)
+	}
+	return postIDs, nil
+}
+
 // GetPostInfoByUsername 根据用户名获取用户信息。
 //
 // 参数：
@@ -250,6 +284,27 @@ func (service *PostService) UploadPostImageFromURL(imageURL string) (string, err
 
 	// 保存在暂存区并返回UUID
 	return service.postStore.CachePostImage(convertedImage)
+}
+
+// ForwardPost 转发博文
+//
+// 参数：
+//   - uid：用户ID
+//   - ipAddr：IP地址
+//   - postID：待转发博文的ID
+//   - content：转发内容
+//
+// 返回值：
+//   - error：如果发生错误，返回相应错误信息；否则返回 nil
+func (service *PostService) ForwardPost(uid uint64, ipAddr string, postID uint64, content string) error {
+	// 检查转发的帖子是否存在
+	_, _, _, err := service.postStore.GetPostInfo(postID)
+	if err != nil {
+		return err
+	}
+
+	// 调用post存储中的转发方法
+	return service.postStore.ForwardPost(uid, ipAddr, postID, content)
 }
 
 // LikePost 点赞博文

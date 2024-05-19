@@ -109,6 +109,52 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 	}
 }
 
+// NewFollowPostListHandler 获取关注用户的帖子列表
+//
+// 返回值：
+//   - fiber.Handler：新的获取关注用户的帖子列表函数
+func (controller *PostController) NewFollowPostListHandler(followStore *stores.FollowStore) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 获取请求用户的 UID
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 获取请求参数
+		length := ctx.Query("len")
+		from := ctx.Query("from")
+		var lengthUint uint64 = 10
+		if length != "" {
+			var err error
+			lengthUint, err = strconv.ParseUint(length, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid length"),
+				)
+			}
+		}
+		if from != "" {
+			_, err := strconv.ParseUint(from, 10, 64)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid from id"),
+				)
+			}
+		}
+
+		// 获取帖子列表
+		posts, err := controller.postService.GetFollowPostList(claims.UID, from, lengthUint, followStore)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		// 返回结果
+		return ctx.Status(200).JSON(
+			serializers.NewResponse(consts.SUCCESS, "succeed", serializers.NewPostListResponse(posts)),
+		)
+	}
+}
+
 // NewDetailHandler 获取文章信息的函数
 //
 // 返回值：
@@ -307,7 +353,7 @@ func (controller *PostController) NewUploadPostImageFromURLHandler() fiber.Handl
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
 			)
-		}	
+		}
 
 		// 上传图片
 		UUID, err := controller.postService.UploadPostImageFromURL(reqBody.URL)
@@ -322,6 +368,52 @@ func (controller *PostController) NewUploadPostImageFromURLHandler() fiber.Handl
 			"succeed",
 			serializers.NewUploadPostImageResponse(UUID),
 		))
+	}
+}
+
+// NewForwardPostHandler 返回一个用于处理转发博文请求的 Fiber 处理函数
+//
+// 返回值：
+//   - fiber.Handler：新的转发博文函数
+func (controller *PostController) NewForwardPostHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// 提取令牌声明
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		// 解析请求
+		reqBody := struct {
+			Content string `json:"content"`
+			PostID  uint64 `json:"post_id"`
+		}{}
+		err := ctx.BodyParser(&reqBody)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+
+		// 验证参数
+		if reqBody.Content == "" {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, "post content is required"),
+			)
+		}
+
+		// 执行转发操作
+		err = controller.postService.ForwardPost(claims.UID, ctx.IP(), reqBody.PostID, reqBody.Content)
+		if err != nil {
+			return ctx.Status(200).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		// 返回成功响应
+		return ctx.Status(200).JSON(
+			serializers.NewResponse(
+				consts.SUCCESS,
+				"",
+			),
+		)
 	}
 }
 
