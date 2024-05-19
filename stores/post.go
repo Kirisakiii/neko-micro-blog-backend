@@ -12,7 +12,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -185,7 +184,6 @@ func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.
 		sb.WriteString(consts.CACHE_IMAGE_LIST)
 		sb.WriteString(":")
 		sb.WriteString(imageUUID)
-		fmt.Println(sb.String())
 		_, err = tx.Del(ctx, sb.String()).Result()
 		if err != nil {
 			tx.Discard()

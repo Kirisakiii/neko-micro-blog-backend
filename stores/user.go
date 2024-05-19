@@ -10,7 +10,6 @@ package stores
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -200,8 +199,6 @@ func (store *UserStore) CreateUserAvaliableToken(token string, claims *types.Bea
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(length)
 
 	tx := store.rds.TxPipeline()
 	// 如果 Token 数量超过限制，则移除最早的 Token

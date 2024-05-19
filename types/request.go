@@ -84,27 +84,22 @@ type UserReplyDeleteBody struct {
 
 // TopicCreateBody 创建话题请求体
 type TopicCreateBody struct {
-	Description string `json:"description" form:"description"` // 话题描述
-	PostID      uint64 `json:"post_id" form:"post_id"`         // 博文ID
+	Name           string `json:"name" form:"name"`                         // 话题名
+	Description    string `json:"description" form:"description"`           // 话题描述
+	BundledGroupID string `json:"bundled_group_id" form:"bundled_group_id"` // 绑定的群组ID
 }
 
 // TopicDeleteBody 删除话题请求体
 type TopicDeleteBody struct {
-	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
-}
-
-// TopicListBody 获取话题列表请求体
-type TopicListBody struct {
-	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+	TopicID string `json:"topic_id" form:"topic_id"` // 话题ID
 }
 
 // TopicLikeBody 点赞话题请求体
 type TopicLikeBody struct {
-    TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
 }
 
 // TopicUnLikeBody 取消点赞话题请求体
 type TopicDisLikeBody struct {
-    TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
+	TopicID primitive.ObjectID `json:"topic_id" form:"topic_id"` // 话题ID
 }
-
