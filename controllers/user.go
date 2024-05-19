@@ -44,6 +44,9 @@ func (factory *Factory) NewUserController() *UserController {
 //   - fiber.Handler：新的获取用户资料的处理函数。
 func (controller *UserController) NewProfileHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		// 设置缓存控制头
+		ctx.Set("Cache-Control", "public, max-age=3")
+
 		// 判断传入的查询参数是UID还是Username
 		uidString := ctx.Query("uid")
 		username := ctx.Query("username")

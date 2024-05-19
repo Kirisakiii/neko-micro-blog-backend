@@ -20,9 +20,9 @@ type PostInfo struct {
 	Title        string         `gorm:"column:title"`                   // 标题
 	Content      string         `gorm:"column:content"`                 // 内容
 	Images       pq.StringArray `gorm:"column:images;type:text[]"`      // 图片
-	Like         pq.Int64Array  `gorm:"column:like;type:bigint[]"`      // 点赞数 记录UID
-	Favourite    pq.Int64Array  `gorm:"column:favourite;type:bigint[]"` // 收藏数 记录UID
-	Farward      pq.Int64Array  `gorm:"column:farward;type:bigint[]"`   // 转发数 记录UID
+	Like         pq.Int64Array  `gorm:"column:like;type:bigint[]"`      // Decreprated 弃用 点赞数 记录UID 
+	Favourite    pq.Int64Array  `gorm:"column:favourite;type:bigint[]"` // Decreprated 弃用 收藏数 记录UID
+	Farward      pq.Int64Array  `gorm:"column:farward;type:bigint[]"`   // Decreprated 弃用 转发数 记录UID
 	IsPublic     bool           `gorm:"column:is_public;default:true"`  // 是否公开
 	// Share     uint64 `gorm:"column:share"`                           // 分享数 暂时不实现
 }

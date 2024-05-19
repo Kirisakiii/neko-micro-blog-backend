@@ -175,7 +175,7 @@ func main() {
 	}))
 
 	// Auth 中间件
-	authMiddleware := middlewareFactory.NewTokenAuthMiddleware()
+	authMiddleware := middlewareFactory.NewTokenAuthMiddleware().NewMiddleware()
 
 	// 静态资源路由
 	resource := app.Group("/resources")
@@ -200,42 +200,44 @@ func main() {
 	// User 路由
 	userController := controllerFactory.NewUserController()
 	user := api.Group("/user")
-	user.Get("/profile", userController.NewProfileHandler())                                             // 查询用户信息
-	user.Get("/likes-count", userController.NewLikesCountHandler())                                      // 获取用户获赞数
-	user.Post("/register", userController.NewRegisterHandler())                                          // 用户注册
-	user.Post("/login", userController.NewLoginHandler())                                                // 用户登录
-	user.Post("/upload-avatar", authMiddleware.NewMiddleware(), userController.NewUploadAvatarHandler()) // 上传头像
-	user.Post("/update-psw", userController.NewUpdatePasswordHandler())                                  // 修改密码
-	user.Post("/edit", authMiddleware.NewMiddleware(), userController.NewUpdateProfileHandler())         // 修改用户资料
+	user.Get("/profile", userController.NewProfileHandler())                             // 查询用户信息
+	user.Get("/likes-count", userController.NewLikesCountHandler())                      // 获取用户获赞数
+	user.Post("/register", userController.NewRegisterHandler())                          // 用户注册
+	user.Post("/login", userController.NewLoginHandler())                                // 用户登录
+	user.Post("/upload-avatar", authMiddleware, userController.NewUploadAvatarHandler()) // 上传头像
+	user.Post("/update-psw", userController.NewUpdatePasswordHandler())                  // 修改密码
+	user.Post("/edit", authMiddleware, userController.NewUpdateProfileHandler())         // 修改用户资料
 
 	// Post 路由
 	postController := controllerFactory.NewPostController(searchServiceClient)
 	post := api.Group("/post")
-	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                                 // 获取文章列表
-	post.Get("/user-status", authMiddleware.NewMiddleware(), postController.NewPostUserStatusHandler())               // 获取用户文章状态
-	post.Post("/new", authMiddleware.NewMiddleware(), postController.NewCreatePostHandler())                          // 创建文章
-	post.Post("/upload/img/file", authMiddleware.NewMiddleware(), postController.NewUploadPostImageFromFileHandler()) // 上传博文图片
-	post.Post("/upload/img/url", authMiddleware.NewMiddleware(), postController.NewUploadPostImageFromURLHandler())   // 从 URL 上传博文图片
-	post.Post("/like", authMiddleware.NewMiddleware(), postController.NewLikePostHandler())                           // 点赞文章
-	post.Post("/cancel-like", authMiddleware.NewMiddleware(), postController.NewCancelLikePostHandler())              // 取消点赞文章
-	post.Post("/favourite", authMiddleware.NewMiddleware(), postController.NewFavouritePostHandler())                 // 收藏文章
-	post.Post("/cancel-favourite", authMiddleware.NewMiddleware(), postController.NewCancelFavouritePostHandler())    // 取消收藏文章
-	post.Get("/:post", postController.NewPostDetailHandler())                                                         // 获取文章信息
-	post.Delete("/:post", authMiddleware.NewMiddleware(), postController.NewDeletePostHandler())                      // 删除文章
+	post.Get("/list/follow", authMiddleware, postController.NewFollowPostListHandler(storeFactory.NewFollowStore())) // 获取关注文章列表
+	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                                // 获取文章列表
+	post.Get("/user-status", authMiddleware, postController.NewPostUserStatusHandler())                              // 获取用户文章状态
+	post.Post("/new", authMiddleware, postController.NewCreatePostHandler())                                         // 创建文章
+	post.Post("/upload/img/file", authMiddleware, postController.NewUploadPostImageFromFileHandler())                // 上传博文图片
+	post.Post("/upload/img/url", authMiddleware, postController.NewUploadPostImageFromURLHandler())                  // 从 URL 上传博文图片
+	post.Post("/like", authMiddleware, postController.NewLikePostHandler())                                          // 点赞文章
+	post.Post("/forward", authMiddleware, postController.NewForwardPostHandler())                                     // 转发文章
+	post.Post("/cancel-like", authMiddleware, postController.NewCancelLikePostHandler())                             // 取消点赞文章
+	post.Post("/favourite", authMiddleware, postController.NewFavouritePostHandler())                                // 收藏文章
+	post.Post("/cancel-favourite", authMiddleware, postController.NewCancelFavouritePostHandler())                   // 取消收藏文章
+	post.Get("/:post", postController.NewPostDetailHandler())                                                        // 获取文章信息
+	post.Delete("/:post", authMiddleware, postController.NewDeletePostHandler())                                     // 删除文章
 
 	// Comment 路由
 	commentController := controllerFactory.NewCommentController()
 	comment := api.Group("/comment")
-	comment.Get("/list", commentController.NewCommentListHandler())                                                     // 获取评论列表
-	comment.Get("/detail", commentController.NewCommentDetailHandler())                                                 // 获取评论详情信息
-	comment.Get("/user-status", authMiddleware.NewMiddleware(), commentController.NewCommentUserStatusHandler())        // 获取用户评论状态
-	comment.Post("/edit", authMiddleware.NewMiddleware(), commentController.NewUpdateCommentHandler())                  // 修改评论
-	comment.Post("/delete", authMiddleware.NewMiddleware(), commentController.DeleteCommentHandler())                   // 删除评论
-	comment.Post("/like", authMiddleware.NewMiddleware(), commentController.NewLikeCommentHandler())                    // 点赞评论
-	comment.Post("/cancel-like", authMiddleware.NewMiddleware(), commentController.NewCancelLikeCommentHandler())       // 取消点赞评论
-	comment.Post("/dislike", authMiddleware.NewMiddleware(), commentController.NewDislikeCommentHandler())              // 踩评论
-	comment.Post("/cancel-dislike", authMiddleware.NewMiddleware(), commentController.NewCancelDislikeCommentHandler()) // 取消踩评论
-	comment.Post("/new", authMiddleware.NewMiddleware(), commentController.NewCreateCommentHandler(
+	comment.Get("/list", commentController.NewCommentListHandler())                                     // 获取评论列表
+	comment.Get("/detail", commentController.NewCommentDetailHandler())                                 // 获取评论详情信息
+	comment.Get("/user-status", authMiddleware, commentController.NewCommentUserStatusHandler())        // 获取用户评论状态
+	comment.Post("/edit", authMiddleware, commentController.NewUpdateCommentHandler())                  // 修改评论
+	comment.Post("/delete", authMiddleware, commentController.DeleteCommentHandler())                   // 删除评论
+	comment.Post("/like", authMiddleware, commentController.NewLikeCommentHandler())                    // 点赞评论
+	comment.Post("/cancel-like", authMiddleware, commentController.NewCancelLikeCommentHandler())       // 取消点赞评论
+	comment.Post("/dislike", authMiddleware, commentController.NewDislikeCommentHandler())              // 踩评论
+	comment.Post("/cancel-dislike", authMiddleware, commentController.NewCancelDislikeCommentHandler()) // 取消踩评论
+	comment.Post("/new", authMiddleware, commentController.NewCreateCommentHandler(
 		storeFactory.NewPostStore(),
 		storeFactory.NewUserStore(),
 	)) // 创建评论
@@ -245,12 +247,12 @@ func main() {
 	reply := api.Group("/reply")
 	reply.Get("/list", replyController.NewGetReplyListHandler())     // 获取回复列表
 	reply.Get("/detail", replyController.NewGetReplyDetailHandler()) // 获取回复详情信息
-	reply.Post("/new", authMiddleware.NewMiddleware(), replyController.NewCreateReplyHandler(
+	reply.Post("/new", authMiddleware, replyController.NewCreateReplyHandler(
 		storeFactory.NewCommentStore(),
 		storeFactory.NewUserStore()),
 	) // 创建回复
-	reply.Post("/edit", authMiddleware.NewMiddleware(), replyController.NewUpdateReplyHandler()) // 修改回复
-	reply.Post("/delete", authMiddleware.NewMiddleware(), replyController.DeleteReplyHandler())  // 删除回复
+	reply.Post("/edit", authMiddleware, replyController.NewUpdateReplyHandler()) // 修改回复
+	reply.Post("/delete", authMiddleware, replyController.DeleteReplyHandler())  // 删除回复
 
 	// Search 路由
 	searchController := controllerFactory.NewSearchController(searchServiceClient)
@@ -260,13 +262,13 @@ func main() {
 	// follow 路由
 	followController := controllerFactory.NewFollowController()
 	follow := api.Group("/follow")
-	follow.Post("/new", authMiddleware.NewMiddleware(), followController.NewCreateFollowHandler())    // 关注用户
-	follow.Post("/delete", authMiddleware.NewMiddleware(), followController.NewCancelFollowHandler()) // 取消关注用户
-	follow.Get("/status", authMiddleware.NewMiddleware(), followController.NewFollowStatusHandler())  // 获取关注状态
-	follow.Get("/list", followController.NewFollowListHandler())                                      // 获取关注列表
-	follow.Get("/list-count", followController.NewFollowCountHandler())                               // 获取关注人数
-	follow.Get("/follower-list", followController.NewFollowerListHandler())                           // 获取粉丝列表
-	follow.Get("/follower-list-count", followController.NewFollowerCountHandler())                    // 获取粉丝人数
+	follow.Post("/new", authMiddleware, followController.NewCreateFollowHandler())    // 关注用户
+	follow.Post("/delete", authMiddleware, followController.NewCancelFollowHandler()) // 取消关注用户
+	follow.Get("/status", authMiddleware, followController.NewFollowStatusHandler())  // 获取关注状态
+	follow.Get("/list", followController.NewFollowListHandler())                      // 获取关注列表
+	follow.Get("/list-count", followController.NewFollowCountHandler())               // 获取关注人数
+	follow.Get("/follower-list", followController.NewFollowerListHandler())           // 获取粉丝列表
+	follow.Get("/follower-list-count", followController.NewFollowerCountHandler())    // 获取粉丝人数
 
 	// 启动服务器
 	log.Fatal(app.Listen(fmt.Sprintf("%s:%d", cfg.Database.Host, cfg.Server.Port)))

@@ -14,7 +14,7 @@ func NewPostListResponse(posts []int64) *PostListResponse {
 
 // PostDetailResponse 文章信息响应结构
 type PostDetailResponse struct {
-	CommentID    uint64   `json:"comment_id"`     //
+	PostID       uint64   `json:"post_id"`        // 文章ID
 	UID          uint64   `json:"uid"`            // 用户ID
 	Timestamp    int64    `json:"timestamp"`      // 时间戳
 	Title        string   `json:"title"`          // 标题
@@ -36,7 +36,7 @@ type PostDetailResponse struct {
 func NewPostDetailResponse(post models.PostInfo, likeCount, favouriteCount int64) *PostDetailResponse {
 	// 创建一个新的 PostProfileData 实例
 	profileData := &PostDetailResponse{
-		CommentID:    uint64(post.ID),
+		PostID:       uint64(post.ID),
 		UID:          post.UID,
 		Timestamp:    post.CreatedAt.Unix(),
 		Title:        post.Title,
