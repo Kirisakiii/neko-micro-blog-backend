@@ -26,6 +26,7 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/converters"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/validers"
 	"github.com/lib/pq"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // PostService 博文服务
@@ -107,6 +108,38 @@ func (service *PostService) GetPostList(reqType, uid, length, from string, userS
 	return postIDs, nil
 }
 
+// GetPostListByTopic 获取适用于用户查看的帖子信息列表。
+//
+// 参数：
+// - topicID：话题ID
+// - from：起始位置
+// - length：获取的帖子数量
+//
+// 返回值：
+// - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
+// - error: 在获取帖子信息过程中遇到的任何错误，如果有的话。
+func (service *PostService) GetPostListByTopic(topicID primitive.ObjectID, from string, length string) ([]int64, error) {
+	var limit int64 = 10
+	var err error
+	if length != "" {
+		limit, err = strconv.ParseInt(length, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	postInfos, err := service.postStore.GetPostListByTopic(topicID, from, int(limit))
+	if err != nil {
+		return nil, err
+	}
+
+	postIDs := make([]int64, len(postInfos))
+	for index, post := range postInfos {
+		postIDs[index] = int64(post.ID)
+	}
+	return postIDs, nil
+}
+
 // GetFollowPostList 获取关注用户的帖子信息列表。
 //
 // 参数：
@@ -162,7 +195,15 @@ func (service *PostService) GetPostInfo(postID uint64) (models.PostInfo, int64, 
 //
 // 返回值：
 //   - error：如果在创建过程中发生错误，则返回相应的错误信息，否则返回nil。
-func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo types.PostCreateBody) (models.PostInfo, error) {
+func (service *PostService) CreatePost(uid uint64, ipAddr string, postReqInfo types.PostCreateBody, topicStore *stores.TopicStore) (models.PostInfo, error) {
+	// 校验TopicID是否存在
+	if !postReqInfo.TopicID.IsZero() {
+		_, err := topicStore.GetTopicDetail(postReqInfo.TopicID)
+		if err != nil {
+			return models.PostInfo{}, err
+		}
+	}
+
 	// 校验图片是否可用
 	for _, image := range postReqInfo.Images {
 		existence, err := service.postStore.CheckCacheImageAvaliable(image)
@@ -380,7 +421,16 @@ func (service *PostService) GetPostUserStatus(uid, postID int64) (bool, bool, er
 //
 // 返回值：
 //   - error：如果发生错误，返回相应错误信息；否则返回 nil
-func (service *PostService) DeletePost(postID uint64) error {
+func (service *PostService) DeletePost(postID uint64, userID uint64) error {
+	// 校验帖子发布者是否为当前用户
+	postInfo, _, _, err := service.postStore.GetPostInfo(postID)
+	if err != nil {
+		return err
+	}
+	if postInfo.UID != userID {
+		return errors.New("permission denied")
+	}
+
 	// 调用post存储中的删除post方法
 	return service.postStore.DeletePost(postID)
 }

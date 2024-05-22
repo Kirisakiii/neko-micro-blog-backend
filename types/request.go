@@ -84,9 +84,8 @@ type UserReplyDeleteBody struct {
 
 // TopicCreateBody 创建话题请求体
 type TopicCreateBody struct {
-	Name           string `json:"name" form:"name"`                         // 话题名
-	Description    string `json:"description" form:"description"`           // 话题描述
-	BundledGroupID string `json:"bundled_group_id" form:"bundled_group_id"` // 绑定的群组ID
+	Name        string `json:"name" form:"name"`               // 话题名
+	Description string `json:"description" form:"description"` // 话题描述
 }
 
 // TopicDeleteBody 删除话题请求体

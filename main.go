@@ -187,6 +187,10 @@ func main() {
 	resource.Static("/image", consts.POST_IMAGE_PATH, fiber.Static{
 		Compress: true,
 	})
+	// 话题头图图片资源路由
+	resource.Static("/banner/topic", consts.TOPIC_BANNER_IMAGE_PATH, fiber.Static{
+		Compress: true,
+	})
 
 	// api 路由
 	api := app.Group("/api")
@@ -214,7 +218,7 @@ func main() {
 	post.Get("/list/follow", authMiddleware, postController.NewFollowPostListHandler(storeFactory.NewFollowStore())) // 获取关注文章列表
 	post.Get("/list", postController.NewPostListHandler(storeFactory.NewUserStore()))                                // 获取文章列表
 	post.Get("/user-status", authMiddleware, postController.NewPostUserStatusHandler())                              // 获取用户文章状态
-	post.Post("/new", authMiddleware, postController.NewCreatePostHandler())                                         // 创建文章
+	post.Post("/new", authMiddleware, postController.NewCreatePostHandler(storeFactory.NewTopicStore()))             // 创建文章
 	post.Post("/upload/img/file", authMiddleware, postController.NewUploadPostImageFromFileHandler())                // 上传博文图片
 	post.Post("/upload/img/url", authMiddleware, postController.NewUploadPostImageFromURLHandler())                  // 从 URL 上传博文图片
 	post.Post("/like", authMiddleware, postController.NewLikePostHandler())                                          // 点赞文章
@@ -273,9 +277,11 @@ func main() {
 	// topic 路由
 	topicController := controllerFactory.NewTopicController()
 	topic := api.Group("/topic")
-	topic.Get("/detail", topicController.GetTopicDetailHandler())                            // 获取目标话题信息
-	topic.Get("/hotest", topicController.GetHotTopicsHandler())                              // 获取最热话题列表
-	topic.Get("/list", topicController.TopicListHandler())                                   // 获取话题列表
+	topic.Get("/detail", topicController.GetTopicDetailHandler(storeFactory.NewPostStore())) // 获取目标话题信息
+	topic.Get("/hotest", topicController.GetHotTopicsHandler(storeFactory.NewPostStore()))   // 获取最热话题列表
+	topic.Get("/list", topicController.TopicListHandler(storeFactory.NewPostStore()))        // 获取话题列表
+	topic.Get("/status", authMiddleware, topicController.GetUserTopicStatusHandler())        // 获取用户话题状态
+	topic.Get("/banner", topicController.GetBannerHandler())                                 // 获取话题横幅
 	topic.Post("/new", authMiddleware, topicController.NewCreateTopicHandler())              // 创建目标话题
 	topic.Post("/delete", authMiddleware, topicController.DeleteTopicHandler())              // 删除目标话题
 	topic.Post("/like", authMiddleware, topicController.NewLikeTopicHandler())               // 点赞目标话题

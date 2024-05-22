@@ -19,18 +19,22 @@ type CreateTopicResponse struct {
 
 // TopicDetailResponse 用于将 TopicInfo 转换为 JSON 格式的结构体
 type TopicDetailResponse struct {
-	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name           string             `bson:"name,omitempty" json:"name"`
-	Description    string             `bson:"description,omitempty" json:"description"`
-	BundledGroupID primitive.ObjectID `bson:"bundled_group_id,omitempty" json:"bundled_group_id"`
-	CreatorID      uint64             `bson:"creator_id,omitempty" json:"creator_id"`
-	Like           uint64             `bson:"like,omitempty" json:"like"`
-	DisLike        uint64             `bson:"dislike,omitempty" json:"dislike"`
+	ID          primitive.ObjectID `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	CreatorID   uint64             `json:"creator_id"`
+	Like        uint64             `json:"like"`
+	DisLike     uint64             `json:"dislike"`
+	RelatedPost uint64             `json:"related_post"`
 }
 
 // TopicListResponse 用于将 TopicInfo 转换为 JSON 格式的结构体
 type TopicListResponse struct {
-	IDs []primitive.ObjectID `bson:"_id,omitempty" json:"ids"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Like        uint64 `json:"like"`
+	RelatedPost uint64 `json:"related_post"`
 }
 
 // NewCreateTopicResponse 用于创建 TopicResponse 实例
@@ -54,15 +58,15 @@ func NewCreateTopicResponse(TopicID primitive.ObjectID) CreateTopicResponse {
 //
 // 返回值：
 // - TagDetailResponse: 创建的 TagDetailResponse 实例
-func NewTopicDetailResponse(TopicInfo models.TopicInfo) TopicDetailResponse {
+func NewTopicDetailResponse(TopicInfo models.TopicInfo, relatedPostCount uint64) TopicDetailResponse {
 	return TopicDetailResponse{
-		ID:             TopicInfo.ID,
-		Name:           TopicInfo.Name,
-		Description:    TopicInfo.Description,
-		BundledGroupID: TopicInfo.BundledGroupID,
-		CreatorID:      TopicInfo.CreatorID,
-		Like:           TopicInfo.Like,
-		DisLike:        TopicInfo.DisLike,
+		ID:          TopicInfo.ID,
+		Name:        TopicInfo.Name,
+		Description: TopicInfo.Description,
+		CreatorID:   TopicInfo.CreatorID,
+		Like:        TopicInfo.Like,
+		DisLike:     TopicInfo.DisLike,
+		RelatedPost: relatedPostCount,
 	}
 }
 
@@ -73,10 +77,78 @@ func NewTopicDetailResponse(TopicInfo models.TopicInfo) TopicDetailResponse {
 //
 // 返回值：
 // - []TopicDetailResponse: 创建的 TopicListResponse 实例
-func NewTopicListResponse(TopicList []models.TopicInfo) TopicListResponse {
-	var resp TopicListResponse
-	for _, TopicInfo := range TopicList {
-		resp.IDs = append(resp.IDs, TopicInfo.ID)
+func NewTopicListResponse(TopicList []TopicInfo) []TopicListResponse {
+	var resp []TopicListResponse
+
+	for _, topicInfo := range TopicList {
+		resp = append(resp, TopicListResponse{
+			ID:          topicInfo.TopicInfo.ID.Hex(),
+			Name:        topicInfo.TopicInfo.Name,
+			Like:        topicInfo.TopicInfo.Like,
+			Description: topicInfo.TopicInfo.Description,
+			RelatedPost: uint64(topicInfo.RelatedPostCount),
+		})
 	}
 	return resp
+}
+
+// TopicInfo 包含热门话题信息和相关帖子数量
+type TopicInfo struct {
+	TopicInfo        models.TopicInfo
+	RelatedPostCount int64
+}
+
+// HotTopicListResponse 用于将 TopicInfo 转换为 JSON 格式的结构体
+type HotTopicListResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Like        uint64 `json:"like"`
+	RelatedPost uint64 `json:"related_post"`
+}
+
+// NewHotTopicListResponse 用于创建 GetHotTopicListResponse 实例
+//
+// 参数：
+// - TopicList: 话题列表
+//
+// 返回值：
+// - []HotTopicListResponse: 创建的 HotTopicListResponse 实例
+func NewHotTopicListResponse(TopicList []TopicInfo) []HotTopicListResponse {
+	var resp []HotTopicListResponse
+
+	for _, topicInfo := range TopicList {
+		resp = append(resp, HotTopicListResponse{
+			ID:          topicInfo.TopicInfo.ID.Hex(),
+			Name:        topicInfo.TopicInfo.Name,
+			Description: topicInfo.TopicInfo.Description,
+			Like:        topicInfo.TopicInfo.Like,
+			RelatedPost: uint64(topicInfo.RelatedPostCount),
+		})
+	}
+	return resp
+}
+
+// TopicStatusResponse 用于将 TopicStatus 转换为 JSON 格式的结构体
+type TopicStatusResponse struct {
+	ID       string `json:"id"`
+	Liked    bool   `json:"liked"`
+	Disliked bool   `json:"disliked"`
+}
+
+// NewTopicStatusResponse 用于创建 TopicStatusResponse 实例
+//
+// 参数：
+// - TopicID: 话题标签的 ID
+// - Liked: 用户是否点赞了目标
+// - Disliked: 用户是否点踩了目标
+//
+// 返回值：
+// - TopicStatusResponse: 创建的 TopicStatusResponse 实例
+func NewTopicStatusResponse(TopicID primitive.ObjectID, Liked bool, Disliked bool) TopicStatusResponse {
+	return TopicStatusResponse{
+		ID:       TopicID.Hex(),
+		Liked:    Liked,
+		Disliked: Disliked,
+	}
 }

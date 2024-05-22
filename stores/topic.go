@@ -52,19 +52,14 @@ func (factory *Factory) NewTopicStore() *TopicStore {
 // 返回值：
 //   - []models.TopicInfo：话题列表。
 //   - error：如果获取话题列表时发生错误，则返回一个错误。
-func (store *TopicStore) GetTopicList(from primitive.ObjectID, length uint64) ([]models.TopicInfo, error) {
+func (store *TopicStore) GetTopicList() ([]models.TopicInfo, error) {
 	ctx := context.Background()
-
-	// 定义查询条件
-	filter := bson.M{
-		"_id": bson.M{"$lt": from},
-	}
 
 	// 查询数据库
 	collection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection("topics")
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(int64(length))
-	cursor, err := collection.Find(ctx, filter, opts)
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	cursor, err := collection.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -88,11 +83,10 @@ func (store *TopicStore) GetTopicList(from primitive.ObjectID, length uint64) ([
 // 返回值：
 //   - topic.ID: 话题ID
 //   - error: 错误信息
-func (store *TopicStore) CreateTopic(userID uint64, name string, description string, groupID primitive.ObjectID) (primitive.ObjectID, error) {
+func (store *TopicStore) CreateTopic(userID uint64, name string, description string) (primitive.ObjectID, error) {
 	ctx := context.Background()
 	// 插入topic信息
 	topic := models.TopicInfo{
-		BundledGroupID: groupID,
 		Name:           name,
 		Description:    description,
 		CreatorID:      userID,
@@ -410,4 +404,68 @@ func (store *TopicStore) GetHotTopics(limit int) ([]models.TopicInfo, error) {
 	}
 
 	return topics, nil
+}
+
+// GetUserTopicStatus 获取用户话题状态
+//
+// 参数：
+//   - topicID: 话题ID
+//   - userID: 用户ID
+//
+// 返回值：
+//   - bool: 用户是否点赞
+//   - bool: 用户是否点踩
+//   - error: 错误信息
+func (store *TopicStore) GetUserTopicStatus(topicID primitive.ObjectID, userID uint64) (bool, bool, error) {
+	ctx := context.Background()
+
+	// 查询是否点赞
+	collection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection("topic_likes")
+	count, err := collection.CountDocuments(ctx, bson.M{"topic_id": topicID, "user_id": userID})
+	if err != nil {
+		return false, false, err
+	}
+	liked := count > 0
+
+	// 查询是否点踩
+	collection = store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection("topic_dislikes")
+	count, err = collection.CountDocuments(ctx, bson.M{"topic_id": topicID, "user_id": userID})
+	if err != nil {
+		return false, false, err
+	}
+	disliked := count > 0
+
+	return liked, disliked, nil
+}
+
+// GetBanner 获取话题横幅图
+//
+// 参数：
+//   - topicID: 话题ID
+//
+// 返回值：
+//   - string: 横幅图URL
+//   - error: 错误信息
+func (store *TopicStore) GetBanner(topicID primitive.ObjectID) (string, error) {
+	ctx := context.Background()
+
+	// 查询话题信息
+	collection := store.mongo.Database(consts.MONGODB_DATABASE_NAME).Collection("topic_banners")
+	result := collection.FindOne(ctx, bson.M{"topic_id": topicID})
+	if errors.Is(result.Err(), mongo.ErrNoDocuments) {
+		return "default.webp", nil
+	}
+	if result.Err() != nil {
+		return "", result.Err()
+	}
+
+	// 解码横幅图URL
+	var banner struct {
+		ResourceName string `bson:"resource_name"`
+	}
+	if err := result.Decode(&banner); err != nil {
+		return "", err
+	}
+
+	return banner.ResourceName, nil
 }
