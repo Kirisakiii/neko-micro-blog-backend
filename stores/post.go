@@ -22,9 +22,9 @@ import (
 	"github.com/Kirisakiii/neko-micro-blog-backend/models"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
@@ -71,6 +71,22 @@ func (store *PostStore) GetPostList(from string, length int) ([]models.PostInfo,
 	return posts, nil
 }
 
+// GetRelatedPostCountByTopicID 获取与话题相关的帖子数量。
+//
+// 参数：
+// - topicID：话题ID
+//
+// 返回值：
+// - int64：与话题相关的帖子数量
+// - error：在检索过程中遇到的任何错误，如果有的话。
+func (store *PostStore) GetRelatedPostCountByTopicID(topicID primitive.ObjectID) (int64, error) {
+	var count int64
+	if result := store.db.Model(&models.PostInfo{}).Where("topic_id = ?", topicID.Hex()).Count(&count); result.Error != nil {
+		return 0, result.Error
+	}
+	return count, nil
+}
+
 // GetFollowPostList 获取适用于用户查看的关注用户的帖子信息列表。
 //
 // 参数：
@@ -111,6 +127,30 @@ func (store *PostStore) GetPostListByUID(uid string) ([]models.PostInfo, error) 
 	return userPosts, nil
 }
 
+// GetPostListByTopic 根据话题获取博文列表。
+//
+// 参数：
+// - topicID：话题ID
+// - from：起始帖子ID
+// - length：帖子数量
+//
+// 返回值：
+// - []models.UserPostInfo: 包含适用于用户查看的帖子信息的切片。
+// - error: 在检索过程中遇到的任何错误，如果有的话。
+func (store *PostStore) GetPostListByTopic(topicID primitive.ObjectID, from string, length int) ([]models.PostInfo, error) {
+	var posts []models.PostInfo
+	if from != "" {
+		if result := store.db.Where("topic_id = ?", topicID.Hex()).Where("id < ?", from).Order("id desc").Limit(length).Find(&posts); result.Error != nil {
+			return nil, result.Error
+		}
+		return posts, nil
+	}
+	if result := store.db.Where("topic_id = ?", topicID.Hex()).Order("id desc").Limit(length).Find(&posts); result.Error != nil {
+		return nil, result.Error
+	}
+	return posts, nil
+}
+
 // ValidatePostExistence 用来检查是否存在Post博文
 //
 // 参数：postID：博文ID
@@ -137,7 +177,9 @@ func (store *PostStore) ValidatePostExistence(postID uint64) (bool, error) {
 //   - uid：用户ID
 //
 // 返回值：
-//   - *models.PostInfo：如果找到了相应的用户信息，则返回该用户信息，否则返回nil。
+//   - models.PostInfo：如果找到了相应的用户信息，则返回该用户信息，否则返回nil。
+//   - int64：用户的点赞数
+//   - int64：用户的收藏数
 //   - error：如果在获取过程中发生错误，则返回相应的错误信息，否则返回nil。
 func (store *PostStore) GetPostInfo(postID uint64) (models.PostInfo, int64, int64, error) {
 	post := models.PostInfo{}
@@ -229,10 +271,13 @@ func (store *PostStore) CreatePost(uid uint64, ipAddr string, postReqData types.
 		Title:        postReqData.Title,
 		Content:      postReqData.Content,
 		Images:       imageFileNames,
-		Like:         pq.Int64Array{},
-		Favourite:    pq.Int64Array{},
-		Farward:      pq.Int64Array{},
 		IsPublic:     true,
+	}
+	if postReqData.TopicID.IsZero() {
+		postInfo.TopicID = nil
+	} else {
+		topicIDHex := postReqData.TopicID.Hex()
+		postInfo.TopicID = &topicIDHex
 	}
 	result := store.db.Create(&postInfo)
 	return postInfo, result.Error

@@ -20,10 +20,10 @@ type PostDetailResponse struct {
 	Title        string   `json:"title"`          // 标题
 	Content      string   `json:"content"`        // 内容
 	ParentPostID *uint64  `json:"parent_post_id"` // 转发自文章ID
+	TopicID      *string  `json:"topic_id"`       // 所属话题ID
 	Images       []string `json:"images"`         // 图片
 	Like         int64    `json:"like"`           // 点赞数
 	Favourite    int64    `json:"favourite"`      // 收藏数
-	Farward      int      `json:"farward"`        // 转发数
 }
 
 // NewPostDetailResponse 创建新的文章信息响应
@@ -37,6 +37,7 @@ func NewPostDetailResponse(post models.PostInfo, likeCount, favouriteCount int64
 	// 创建一个新的 PostProfileData 实例
 	profileData := &PostDetailResponse{
 		PostID:       uint64(post.ID),
+		TopicID:      post.TopicID,
 		UID:          post.UID,
 		Timestamp:    post.CreatedAt.Unix(),
 		Title:        post.Title,
@@ -44,7 +45,6 @@ func NewPostDetailResponse(post models.PostInfo, likeCount, favouriteCount int64
 		ParentPostID: post.ParentPostID,
 		Like:         likeCount,
 		Favourite:    favouriteCount,
-		Farward:      len(post.Farward),
 	}
 	for _, image := range post.Images {
 		profileData.Images = append(profileData.Images, "/resources/image/"+image)

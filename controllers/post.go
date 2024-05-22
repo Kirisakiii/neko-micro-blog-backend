@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"gorm.io/gorm"
 
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
@@ -93,6 +94,15 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 		case "favourited":
 			posts, err = controller.postService.GetPostList("favourited", uid, length, from, userStore)
 			posts = functools.Reverse(posts)
+		case "topic":
+			topicIDStr := ctx.Query("topic_id")
+			topicID, err := primitive.ObjectIDFromHex(topicIDStr)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.PARAMETER_ERROR, "invalid topic id"),
+				)
+			}
+			posts, err = controller.postService.GetPostListByTopic(topicID, from, length)
 		default:
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "invalid type"))
 		}
@@ -202,9 +212,12 @@ func (controller *PostController) NewPostDetailHandler() fiber.Handler {
 
 // NewCreatePostHandler 返回一个用于处理创建博文请求的 Fiber 处理函数
 //
+// 参数：
+//   - topicStore：话题存储
+//
 // 返回值：
 //   - fiber.Handler：新的创建博文函数
-func (controller *PostController) NewCreatePostHandler() fiber.Handler {
+func (controller *PostController) NewCreatePostHandler(topicStore *stores.TopicStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 提取令牌声明
 		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
@@ -230,14 +243,8 @@ func (controller *PostController) NewCreatePostHandler() fiber.Handler {
 			)
 		}
 
-		if reqBody.TopicID.IsZero(){
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, "post topic id is required"),
-			)
-		}
-		
 		// 创建博文
-		postInfo, err := controller.postService.CreatePost(claims.UID, ctx.IP(), reqBody)
+		postInfo, err := controller.postService.CreatePost(claims.UID, ctx.IP(), reqBody, topicStore)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -551,6 +558,9 @@ func (controller *PostController) NewCancelFavouritePostHandler() fiber.Handler 
 //   - fiber.Handler：新的博文删除函数
 func (controller *PostController) NewDeletePostHandler() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		// claims
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
 		// 获取PostID
 		postID := ctx.Params("post")
 
@@ -566,7 +576,7 @@ func (controller *PostController) NewDeletePostHandler() fiber.Handler {
 		}
 
 		// 执行删除操作
-		if err := controller.postService.DeletePost(postIDUint); err != nil {
+		if err := controller.postService.DeletePost(postIDUint, claims.UID); err != nil {
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.SERVER_ERROR, err.Error()))
 		}
 

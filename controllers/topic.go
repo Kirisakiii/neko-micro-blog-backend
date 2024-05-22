@@ -8,10 +8,9 @@ Copyright (c) [2024], Author(s):
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/Kirisakiii/neko-micro-blog-backend/consts"
 	"github.com/Kirisakiii/neko-micro-blog-backend/services"
+	"github.com/Kirisakiii/neko-micro-blog-backend/stores"
 	"github.com/Kirisakiii/neko-micro-blog-backend/types"
 	"github.com/Kirisakiii/neko-micro-blog-backend/utils/serializers"
 	"github.com/gofiber/fiber/v2"
@@ -37,38 +36,10 @@ func (factory *Factory) NewTopicController() *TopicController {
 //
 // 返回值：
 //   - fiber.Handler：话题列表处理函数
-func (controller *TopicController) TopicListHandler() fiber.Handler {
+func (controller *TopicController) TopicListHandler(postStore *stores.PostStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		// 解析请求
-		from := ctx.Query("from")
-		length := ctx.Query("length")
-
-		var fromObejctID primitive.ObjectID
-		if from == "" {
-			fromObejctID = primitive.NewObjectID()
-		} else {
-			var err error
-			fromObejctID, err = primitive.ObjectIDFromHex(from)
-			if err != nil {
-				return ctx.Status(200).JSON(
-					serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
-				)
-			}
-		}
-
-		lenghtUint, err := strconv.ParseUint(length, 10, 64)
-		if err != nil {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
-			)
-		}
-
-		if (lenghtUint > 20) || (lenghtUint == 0) {
-			lenghtUint = 20
-		}
-
 		// 调用服务层获取话题列表
-		topics, err := controller.topicService.GetTopicList(fromObejctID, lenghtUint)
+		topics, err := controller.topicService.GetTopicList(postStore)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -113,15 +84,9 @@ func (controller *TopicController) NewCreateTopicHandler() fiber.Handler {
 				serializers.NewResponse(consts.PARAMETER_ERROR, "description is required"),
 			)
 		}
-		groupID, err := primitive.ObjectIDFromHex(reqBody.BundledGroupID)
-		if err != nil {
-			return ctx.Status(200).JSON(
-				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
-			)
-		}
 
 		// 创建目标
-		tagID, err := controller.topicService.CreateTopic(claims.UID, reqBody, groupID)
+		tagID, err := controller.topicService.CreateTopic(claims.UID, reqBody)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -174,7 +139,7 @@ func (controller *TopicController) DeleteTopicHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：获取目标列表的处理函数。
-func (controller *TopicController) GetTopicDetailHandler() fiber.Handler {
+func (controller *TopicController) GetTopicDetailHandler(postStore *stores.PostStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// 解析请求
 		objectIDString := ctx.Query("topic_id")
@@ -186,7 +151,7 @@ func (controller *TopicController) GetTopicDetailHandler() fiber.Handler {
 		}
 
 		//调用服务层获取目标列表
-		tagList, err := controller.topicService.GetTopicDetail(objectID)
+		topicList, relatedPostCount, err := controller.topicService.GetTopicDetail(objectID, postStore)
 		if err != nil {
 			return ctx.Status(200).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -195,7 +160,7 @@ func (controller *TopicController) GetTopicDetailHandler() fiber.Handler {
 
 		//返回结果
 		return ctx.Status(200).JSON(
-			serializers.NewResponse(consts.SUCCESS, "", serializers.NewTopicDetailResponse(tagList)),
+			serializers.NewResponse(consts.SUCCESS, "", serializers.NewTopicDetailResponse(topicList, relatedPostCount)),
 		)
 
 	}
@@ -332,11 +297,11 @@ func (controller *TopicController) NewCancelDislikeHandler() fiber.Handler {
 //
 // 返回值：
 //   - fiber.Handler：话题列表的处理函数
-func (controller *TopicController) GetHotTopicsHandler() fiber.Handler {
+func (controller *TopicController) GetHotTopicsHandler(postStore *stores.PostStore) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		limit := 10 // 设置默认的获取热门话题的数量
 
-		topics, err := controller.topicService.GetHotTopics(limit)
+		topics, err := controller.topicService.GetHotTopics(limit, postStore)
 		if err != nil {
 			return ctx.Status(fiber.StatusInternalServerError).JSON(
 				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
@@ -344,7 +309,63 @@ func (controller *TopicController) GetHotTopicsHandler() fiber.Handler {
 		}
 
 		return ctx.Status(fiber.StatusOK).JSON(
-			serializers.NewResponse(consts.SUCCESS, "success", topics),
+			serializers.NewResponse(consts.SUCCESS, "success", serializers.NewHotTopicListResponse(topics)),
+		)
+	}
+}
+
+// GetUserTopicStatusHandler 返回用户话题状态的处理函数
+//
+// 返回值：
+//   - fiber.Handler：用户话题状态的处理函数
+func (controller *TopicController) GetUserTopicStatusHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		claims := ctx.Locals("claims").(*types.BearerTokenClaims)
+
+		topicIDHex := ctx.Query("topic_id")
+		topicID, err := primitive.ObjectIDFromHex(topicIDHex)
+		if err != nil {
+			return ctx.Status(fiber.StatusBadRequest).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+
+		liked, disliked, err := controller.topicService.GetUserTopicStatus(topicID, claims.UID)
+		if err != nil {
+			return ctx.Status(fiber.StatusInternalServerError).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		return ctx.Status(fiber.StatusOK).JSON(
+			serializers.NewResponse(consts.SUCCESS, "success", serializers.NewTopicStatusResponse(topicID, liked, disliked)),
+		)
+	}
+}
+
+// GetBannerHandler 返回获取Banner的处理函数
+//
+// 返回值：
+//   - fiber.Handler：获取Banner的处理函数
+func (controller *TopicController) GetBannerHandler() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		topicIDHex := ctx.Query("topic_id")
+		topicID, err := primitive.ObjectIDFromHex(topicIDHex)
+		if err != nil {
+			return ctx.Status(fiber.StatusBadRequest).JSON(
+				serializers.NewResponse(consts.PARAMETER_ERROR, err.Error()),
+			)
+		}
+
+		banners, err := controller.topicService.GetBanner(topicID)
+		if err != nil {
+			return ctx.Status(fiber.StatusInternalServerError).JSON(
+				serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+			)
+		}
+
+		return ctx.Status(fiber.StatusOK).JSON(
+			serializers.NewResponse(consts.SUCCESS, "success", banners),
 		)
 	}
 }
