@@ -103,6 +103,11 @@ func (controller *PostController) NewPostListHandler(userStore *stores.UserStore
 				)
 			}
 			posts, err = controller.postService.GetPostListByTopic(topicID, from, length)
+			if err != nil {
+				return ctx.Status(200).JSON(
+					serializers.NewResponse(consts.SERVER_ERROR, err.Error()),
+				)
+			}
 		default:
 			return ctx.Status(200).JSON(serializers.NewResponse(consts.PARAMETER_ERROR, "invalid type"))
 		}
